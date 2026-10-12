@@ -324,6 +324,20 @@ function sessionSummary(session) {
   return summarizeSession(session.rows.map(diaryRow), session.timeS, session.rpeS, session.timeW, session.rpeW);
 }
 
+function headerTitle() {
+  if (role === "coach" && athletes.length > 1) {
+    return `<label class="switch-label">Sprawdzany zawodnik
+      <select class="athlete-switch" data-action="pick-athlete" aria-label="Sprawdzany zawodnik">
+        ${athletes.map((athlete) => `<option value="${athlete.id}" ${athlete.id === selectedAthleteId ? "selected" : ""}>${esc(athlete.full_name)}</option>`).join("")}
+      </select>
+    </label>`;
+  }
+  const name = role === "coach" && selectedAthleteId
+    ? athletes.find((item) => item.id === selectedAthleteId)?.full_name || "Dziennik dwuboju"
+    : "Dziennik dwuboju";
+  return `<strong>${esc(name)}</strong>`;
+}
+
 function shell(title, body, dock) {
   const dockHtml = dock ? `
     <nav class="dock">
@@ -335,7 +349,7 @@ function shell(title, body, dock) {
   document.getElementById("app").innerHTML = `
     ${dock ? `<header class="top">
       <div>
-        <strong>${role === "coach" && selectedAthleteId ? esc(athletes.find((item) => item.id === selectedAthleteId)?.full_name || "Dziennik dwuboju") : "Dziennik dwuboju"}</strong>
+        ${headerTitle()}
         <small class="sync">${esc(syncStatus)}</small>
       </div>
       <span class="role-pill">${role === "coach" ? "trener" : "zawodnik"}</span>
@@ -414,6 +428,12 @@ function renderGate() {
           <span>Hasło: Zawodnik1234</span>
           <button class="quiet block" type="button" data-action="fill-demo" data-email="zawodnik.testowy@example.com" data-password="Zawodnik1234">Zaloguj jako zawodnik</button>
         </div>
+        <div class="demo-account">
+          <b>Zawodniczka Testowa</b>
+          <code>zawodniczka.testowa@example.com</code>
+          <span>Hasło: Testowa1234</span>
+          <button class="quiet block" type="button" data-action="fill-demo" data-email="zawodniczka.testowa@example.com" data-password="Testowa1234">Zaloguj jako drugiego zawodnika</button>
+        </div>
       </div>
     </section>
     <details class="day">
@@ -475,12 +495,7 @@ function renderPlanList() {
         <button class="block" type="submit">Utwórz</button>
       </form>
     </div></details>` : "";
-  const athletePicker = role === "coach" && athletes.length > 1 ? `
-    <label>Zawodnik</label>
-    <select data-action="pick-athlete">
-      ${athletes.map((athlete) => `<option value="${athlete.id}" ${athlete.id === selectedAthleteId ? "selected" : ""}>${esc(athlete.full_name)}</option>`).join("")}
-    </select>` : "";
-  shell("plan", `<h1>Plan</h1><p class="lead">Mikrocykl na siedem dni: serie, podniesienia i intensywność względem rekordu.</p>${athletePicker}${cards}${form}`, true);
+  shell("plan", `<h1>Plan</h1><p class="lead">Mikrocykl na siedem dni: serie, podniesienia i intensywność względem rekordu.</p>${cards}${form}`, true);
 }
 
 function renderPlan(id) {
