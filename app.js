@@ -769,6 +769,7 @@ function renderAnalysis(arg) {
     <h2>Plan wobec realizacji</h2>
     ${select}
     ${comparison}
+    <button class="block" type="button" data-action="export-excel">Pobierz Excel</button>
   `, true);
 }
 
@@ -807,6 +808,9 @@ function renderMore() {
     <h1>Więcej</h1>
     <p class="lead">${esc(profile?.full_name || "")} · ${esc(currentUser?.email || "")}</p>
     ${coachTools}
+    <h2>Excel</h2>
+    <button class="block" type="button" data-action="export-excel">Pobierz Excel</button>
+    <p class="note">Skoroszyt zawiera rekordy, plan, dziennik, podsumowanie mikrocykli, kompleksy oraz porównanie planu z realizacją.</p>
     <h2>Kopia zapasowa</h2>
     <button class="quiet block" type="button" data-action="export">Pobierz kopię danych</button>
     <label>Odtwórz z pliku</label>
@@ -920,6 +924,8 @@ document.addEventListener("click", async (event) => {
     render();
   } else if (action === "export") {
     exportFile();
+  } else if (action === "export-excel") {
+    exportExcel();
   } else if (action === "delete-exercise") {
     const cycle = state.microcycles.find((item) => item.id === Number(target.dataset.cycle));
     const day = cycle.days.find((item) => item.id === Number(target.dataset.day));
@@ -1128,12 +1134,33 @@ function handleSubmit(action, data) {
   }
 }
 
-async function exportFile() {
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
-  const file = new File([blob], "dziennik-dwuboj.json", { type: "application/json" });
+function athleteFileStem() {
+  const athlete = role === "coach"
+    ? athletes.find((item) => item.id === selectedAthleteId)?.full_name
+    : profile?.full_name;
+  const safe = String(athlete || "zawodnik").replace(/[\\/:*?"<>|]+/g, "").trim() || "zawodnik";
+  return `dziennik-${safe}`;
+}
+
+function sheetNumber(value, digits = 2) {
+  if (value == null || value === "" || Number.isNaN(Number(value))) return "";
+  const factor = 10 ** digits;
+  return Math.round(Number(value) * factor) / factor;
+}
+
+function safeCount(value) {
+  try {
+    return parseCount(value);
+  } catch (error) {
+    return 0;
+  }
+}
+
+async function downloadBlob(blob, filename) {
+  const file = new File([blob], filename, { type: blob.type });
   try {
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: "Dziennik dwuboju" });
+      await navigator.share({ files: [file], title: filename });
       return;
     }
   } catch (error) {
@@ -1141,8 +1168,165 @@ async function exportFile() {
   }
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
-  link.download = "dziennik-dwuboj.json";
+  link.download = filename;
   link.click();
+}
+
+function addSheet(workbook, name, rows) {
+  const sheet = XLSX.utils.aoa_to_sheet(rows.length ? rows : [["Brak danych"]]);
+  sheet["!cols"] = (rows[0] || []).map((header) => ({ wch: Math.min(36, Math.max(12, String(header).length + 2)) }));
+  XLSX.utils.book_append_sheet(workbook, sheet, name);
+}
+
+function exportExcel() {
+  if (!window.XLSX) {
+    message = "Biblioteka Excela nie została wczytana. Odśwież stronę.";
+    render();
+    return;
+  }
+  const records = [["Ćwiczenie", "Rekord (kg)"]];
+  state.records.forEach((record) => {
+    records.push([record.name, sheetNumber(record.maxKg, 1)]);
+  });
+
+  const plan = [[
+    "Okres", "Mikrocykl", "Początek", "Dzień", "Data", "Poziom obciążenia", "Notatka dnia",
+    "Ćwiczenie", "Kompleks", "Rodzaj", "Serie", "Podniesienia", "Intensywność",
+    "Rekord", "Rekord (kg)", "Planowane kg", "Objętość", "Tonaż (kg)",
+  ]];
+  state.microcycles.forEach((cycle) => {
+    cycle.days.forEach((day) => {
+      const date = dayDate(cycle.startDate, day.dayIndex);
+      const exercises = day.exercises.length ? day.exercises : [null];
+      exercises.forEach((exercise) => {
+        const record = exercise ? recordById(exercise.recordId) : null;
+        const sets = exercise ? safeCount(exercise.setsText) : "";
+        const reps = exercise ? safeCount(exercise.repsText) : "";
+        const volume = exercise ? sets * reps : "";
+        const plannedKg = exercise && exercise.intensity != null && record ? exercise.intensity * record.maxKg : "";
+        const tonnage = plannedKg !== "" && volume !== "" ? volume * plannedKg : "";
+        plan.push([
+          cycle.periodNo,
+          cycle.microNo,
+          cycle.startDate,
+          weekday(date),
+          date,
+          day.loadLevel || "",
+          day.note || "",
+          exercise ? exercise.name : "",
+          exercise ? (COMPLEXES[exercise.complex] || exercise.complex) : "",
+          exercise ? exercise.kind : "",
+          exercise ? exercise.setsText : "",
+          exercise ? exercise.repsText : "",
+          exercise ? sheetNumber(exercise.intensity, 2) : "",
+          record ? record.name : "",
+          record ? sheetNumber(record.maxKg, 1) : "",
+          sheetNumber(plannedKg, 1),
+          volume,
+          sheetNumber(tonnage, 1),
+        ]);
+      });
+    });
+  });
+
+  const diary = [[
+    "Data", "Okres", "Mikrocykl", "Nr treningu", "Rodzaj",
+    "Czas specjalny (min)", "RPE specjalne", "Czas uzupełniający (min)", "RPE uzupełniające", "sRPE-load",
+    "Ćwiczenie", "Kompleks", "Serie", "Podniesienia", "Obciążenie (kg)", "Rekord", "Rekord (kg)",
+    "Objętość", "Tonaż (kg)", "Intensywność",
+  ]];
+  [...state.sessions].sort((a, b) => a.date.localeCompare(b.date) || a.sessionInMicro - b.sessionInMicro).forEach((session) => {
+    const summary = sessionSummary(session);
+    const rows = session.rows.length ? session.rows : [null];
+    rows.forEach((row) => {
+      const load = row ? exerciseLoad(row.setsText, row.repsText, row.loadKg, row.recordKg) : null;
+      diary.push([
+        session.date,
+        session.periodNo,
+        session.microNo,
+        session.sessionInMicro,
+        session.sessionType,
+        sheetNumber(session.timeS, 0),
+        sheetNumber(session.rpeS, 0),
+        sheetNumber(session.timeW, 0),
+        sheetNumber(session.rpeW, 0),
+        sheetNumber(summary.srpe_load, 0),
+        row ? row.name : "",
+        row ? (COMPLEXES[row.complex] || row.complex) : "",
+        row ? row.setsText : "",
+        row ? row.repsText : "",
+        row ? sheetNumber(row.loadKg, 1) : "",
+        row ? (row.recordName || "") : "",
+        row ? sheetNumber(row.recordKg, 1) : "",
+        load ? load.volume : "",
+        load ? sheetNumber(load.tonnage, 1) : "",
+        load ? sheetNumber(load.intensity, 2) : "",
+      ]);
+    });
+  });
+
+  const { article } = analysisModel();
+  const micros = [[
+    "Okres", "Mikrocykl", "Jednostki", "PC", "Siłowe", "Inne", "Serie", "Objętość", "Tonaż (kg)",
+    "Średnie obciążenie (kg)", "Średni tonaż na jedn. PC+siłową", "RPE-load specjalny", "RPE-load uzupełniający",
+    "sRPE-load", "Wewnętrzne/zewnętrzne", "ACWR tonażu", "ACWR RPE",
+  ]];
+  const groups = [["Okres", "Mikrocykl", "Grupa", "Objętość", "Tonaż (kg)", "Średnie obciążenie (kg)", "Średnia intensywność"]];
+  article.forEach((item) => {
+    micros.push([
+      item.period_no, item.micro_no, item.sessions, item.pc, item.sil, item.inne,
+      sheetNumber(item.sets, 0), sheetNumber(item.volume, 0), sheetNumber(item.tonnage, 1),
+      sheetNumber(item.avg_load, 1), sheetNumber(item.avg_tonnage_session, 1),
+      sheetNumber(item.rpe_load_s, 0), sheetNumber(item.rpe_load_w, 0), sheetNumber(item.srpe_load, 0),
+      sheetNumber(item.internal_external, 3), sheetNumber(item.acwr_tonnage, 2), sheetNumber(item.acwr_rpe, 2),
+    ]);
+    [...item.groups, item.overall, item.rest].forEach((group) => {
+      groups.push([
+        item.period_no, item.micro_no, group.label,
+        sheetNumber(group.volume, 0), sheetNumber(group.tonnage, 1),
+        sheetNumber(group.avg_load, 1), sheetNumber(group.avg_intensity, 2),
+      ]);
+    });
+  });
+
+  const compare = [[
+    "Okres", "Mikrocykl", "Data", "Dzień", "Poziom obciążenia",
+    "Plan: objętość", "Plan: intensywność", "Plan: tonaż (kg)",
+    "Realizacja: objętość", "Realizacja: intensywność", "Realizacja: tonaż (kg)",
+  ]];
+  state.microcycles.forEach((cycle) => {
+    cycle.days.forEach((day) => {
+      const date = dayDate(cycle.startDate, day.dayIndex);
+      const planned = summarizePlan(day.exercises.map(planExerciseRow));
+      const realizedRows = state.sessions
+        .filter((session) => session.date === date)
+        .flatMap((session) => session.rows.map(diaryRow));
+      const realized = summarizeSession(realizedRows, 0, 0, 0, 0);
+      compare.push([
+        cycle.periodNo, cycle.microNo, date, weekday(date), day.loadLevel || "",
+        sheetNumber(planned.volume, 0), sheetNumber(planned.avg_intensity, 2), sheetNumber(planned.tonnage, 1),
+        realizedRows.length ? sheetNumber(realized.volume, 0) : "",
+        realizedRows.length ? sheetNumber(realized.avg_intensity, 2) : "",
+        realizedRows.length ? sheetNumber(realized.tonnage, 1) : "",
+      ]);
+    });
+  });
+
+  const workbook = XLSX.utils.book_new();
+  addSheet(workbook, "Rekordy", records);
+  addSheet(workbook, "Plan", plan);
+  addSheet(workbook, "Dziennik", diary);
+  addSheet(workbook, "Mikrocykle", micros);
+  addSheet(workbook, "Kompleksy", groups);
+  addSheet(workbook, "Plan a realizacja", compare);
+  const bytes = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+  const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  downloadBlob(blob, `${athleteFileStem()}.xlsx`);
+}
+
+async function exportFile() {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  downloadBlob(blob, `${athleteFileStem()}.json`);
 }
 
 function importFile(file) {
