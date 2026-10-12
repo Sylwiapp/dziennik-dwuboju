@@ -6,6 +6,6 @@
  * pilnują reguły RLS z pliku supabase.sql.
  */
 window.APP_CONFIG = {
-  supabaseUrl: "",
-  supabaseAnonKey: "",
+  supabaseUrl: "https://wcbmpxwsygddrzxowzkb.supabase.co",
+  supabaseAnonKey: "sb_publishable_p3yM8vnU3lEupZuDatNoiQ_s13vW1mt",
 };
