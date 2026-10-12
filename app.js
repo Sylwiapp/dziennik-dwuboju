@@ -398,6 +398,24 @@ function renderGate() {
         <button class="quiet block" type="button" data-action="forgot-password">Nie pamiętam hasła</button>
       </form>
     </section>
+    <section class="card">
+      <h2>Konta testowe</h2>
+      <p class="note">Można z nich korzystać od razu, bez potwierdzania e-maila.</p>
+      <div class="demo-list">
+        <div class="demo-account">
+          <b>Trener Testowy</b>
+          <code>trener.testowy@example.com</code>
+          <span>Hasło: Trener1234</span>
+          <button class="block" type="button" data-action="fill-demo" data-email="trener.testowy@example.com" data-password="Trener1234">Zaloguj jako trener</button>
+        </div>
+        <div class="demo-account">
+          <b>Zawodnik Testowy</b>
+          <code>zawodnik.testowy@example.com</code>
+          <span>Hasło: Zawodnik1234</span>
+          <button class="quiet block" type="button" data-action="fill-demo" data-email="zawodnik.testowy@example.com" data-password="Zawodnik1234">Zaloguj jako zawodnik</button>
+        </div>
+      </div>
+    </section>
     <details class="day">
       <summary>Załóż konto<span>trener albo zawodnik</span></summary>
       <div class="day-body">
@@ -811,6 +829,12 @@ document.addEventListener("click", async (event) => {
     localStorage.removeItem(ATHLETE_KEY);
     location.hash = "";
     render();
+  } else if (action === "fill-demo") {
+    const form = document.querySelector('form[data-action="sign-in"]');
+    if (!form) return;
+    form.elements.email.value = target.dataset.email;
+    form.elements.password.value = target.dataset.password;
+    form.requestSubmit();
   } else if (action === "forgot-password") {
     const email = document.querySelector("#login-email")?.value.trim();
     if (!email) {
