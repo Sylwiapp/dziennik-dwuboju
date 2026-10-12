@@ -94,7 +94,7 @@ begin
     raise exception 'Tylko trener może tworzyć zaproszenia.';
   end if;
 
-  generated_code := upper(substr(encode(gen_random_bytes(8), 'hex'), 1, 10));
+  generated_code := upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 10));
   insert into public.invitations (coach_id, code)
   values (auth.uid(), generated_code);
   return generated_code;
