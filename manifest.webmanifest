@@ -1,0 +1,10 @@
+{
+  "name": "Dziennik dwuboju",
+  "short_name": "Dziennik",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f7fb",
+  "theme_color": "#0a4f4f",
+  "lang": "pl"
+}

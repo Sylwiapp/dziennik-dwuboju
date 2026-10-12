@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Plan{% endblock %}
+{% block body %}
+<h1>Planowanie mikrocykli</h1>
+<p class="lead">Każdy mikrocykl ma siedem dni. W dniu są ćwiczenia ze seriami, podniesieniami i intensywnością względem rekordu.</p>
+
+{% if microcycles %}
+<table>
+  <thead>
+    <tr><th>Okres</th><th>Mikrocykl</th><th>Początek</th><th>Intensywność</th><th>Objętość</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for item in microcycles %}
+    <tr>
+      <td>{{ item.period_no }}</td>
+      <td>{{ item.micro_no }}</td>
+      <td>{{ item.start_date }}</td>
+      <td>{{ item.intensity_note or "—" }}</td>
+      <td>{{ item.volume_note or "—" }}</td>
+      <td><a href="{{ url_for('plan_detail', micro_id=item.id) }}">Otwórz</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>Nie ma jeszcze żadnego mikrocyklu.</p>
+{% endif %}
+
+{% if me.role == 'coach' %}
+<h2>Nowy mikrocykl</h2>
+<form method="post" action="{{ url_for('plan_new') }}" class="card grid grid-4">
+  <p><label>Nr okresu</label><input name="period_no" type="number" min="1" value="1" required></p>
+  <p><label>Nr mikrocyklu</label><input name="micro_no" type="number" min="1" value="{{ (microcycles|length) + 1 }}" required></p>
+  <p><label>Data początku</label><input name="start_date" type="date" required></p>
+  <p><label>Założenie intensywności</label><input name="intensity_note" placeholder="np. 75% U17+"></p>
+  <p><label>Założenie objętości</label><input name="volume_note" placeholder="np. 6–8 serii"></p>
+  <p class="row-actions"><button type="submit">Utwórz</button></p>
+</form>
+{% endif %}
+{% endblock %}

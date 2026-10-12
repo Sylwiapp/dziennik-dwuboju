@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Wydruk planu{% endblock %}
+{% block body %}
+<p class="no-print"><a href="{{ url_for('plan_detail', micro_id=micro.id) }}">Wróć do edycji</a>
+  <button type="button" onclick="window.print()">Drukuj</button></p>
+<h1>Plan treningowy</h1>
+<p>Okres {{ micro.period_no }}, mikrocykl {{ micro.micro_no }}, od {{ micro.start_date }}.</p>
+<p>Intensywność: {{ micro.intensity_note or "—" }}. Objętość: {{ micro.volume_note or "—" }}.</p>
+{% for block in days %}
+<section class="card">
+  <h2>{{ block.title }} — {{ block.day.load_level or "bez poziomu" }}</h2>
+  {% if block.day.note %}<p>{{ block.day.note }}</p>{% endif %}
+  {% for kind in kinds %}
+    {% if block.grouped[kind] %}
+    <h3>Ćwiczenia {{ kind }}</h3>
+    <ul>
+      {% for exercise in block.grouped[kind] %}
+      <li>
+        {{ exercise.name }} —
+        {{ exercise.sets_text }} ser. × {{ exercise.reps_text }}
+        {% if exercise.intensity is not none %} @ {{ exercise.intensity|pct }}{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  {% endfor %}
+  <p class="note">Razem: {{ block.summary.sets|pl(0) }} serii, {{ block.summary.volume|pl(0) }} podniesień, średnio {{ block.summary.avg_intensity|pct }}.</p>
+</section>
+{% endfor %}
+{% endblock %}

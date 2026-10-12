@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Brak uprawnień{% endblock %}
+{% block body %}
+<section class="card">
+  <h1>Tę część uzupełnia druga rola</h1>
+  <p>Plan i rekordy zapisuje trener. Dziennik realizacji uzupełnia zawodnik.</p>
+  <p><a class="button" href="{{ url_for('logout') }}">Zmień konto</a></p>
+</section>
+{% endblock %}

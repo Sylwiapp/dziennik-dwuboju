@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Dziennik{% endblock %}
+{% block body %}
+<h1>Dziennik treningowy</h1>
+<p class="lead">Zawodnik wpisuje wykonane serie, podniesienia i kilogramy. Objętość, tonaż, średnie obciążenie i RPE-load liczą się same.</p>
+
+{% if sessions %}
+<table>
+  <thead>
+    <tr>
+      <th>Data</th><th>Tydz.</th><th>Mikrocykl</th><th>Rodzaj</th>
+      <th>Serie</th><th>Podniesienia</th><th>Tonaż</th><th>Śr. kg</th><th>Śr. intens.</th><th>RPE-load</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in sessions %}
+    <tr>
+      <td><a href="{{ url_for('diary_detail', session_id=item.session.id) }}">{{ item.session.session_date }}</a></td>
+      <td>{{ item.summary.week }}</td>
+      <td>{{ item.session.period_no }}/{{ item.session.micro_no }}</td>
+      <td>{{ item.session.session_type }}</td>
+      <td>{{ item.summary.sets|pl(0) }}</td>
+      <td>{{ item.summary.volume|pl(0) }}</td>
+      <td>{{ item.summary.tonnage|pl(0) }}</td>
+      <td>{{ item.summary.avg_load|pl(1) }}</td>
+      <td>{{ item.summary.avg_intensity|pct }}</td>
+      <td>{{ item.summary.srpe_load|pl(0) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>Dziennik jest pusty.</p>
+{% endif %}
+
+{% if me.role == 'athlete' %}
+<h2>Nowa jednostka</h2>
+<form method="post" action="{{ url_for('diary_new') }}" class="card grid grid-4">
+  <p><label>Data</label><input type="date" name="session_date" required></p>
+  <p><label>Nr okresu</label><input type="number" name="period_no" value="1" min="1" required></p>
+  <p><label>Nr mikrocyklu</label><input type="number" name="micro_no" value="1" min="1" required></p>
+  <p><label>Nr treningu w mikrocyklu</label><input type="number" name="session_in_micro" value="1" min="1" required></p>
+  <p>
+    <label>Rodzaj</label>
+    <select name="session_type">
+      {% for code, label in session_types %}<option value="{{ code }}">{{ label }}</option>{% endfor %}
+    </select>
+  </p>
+  <p><label>Czas części specjalnej (min)</label><input name="time_s" value="50"></p>
+  <p><label>RPE części specjalnej</label><input name="rpe_s" value="5"></p>
+  <p><label>Czas części uzupełniającej (min)</label><input name="time_w" value="15"></p>
+  <p><label>RPE części uzupełniającej</label><input name="rpe_w" value="4"></p>
+  <p class="row-actions"><button type="submit">Utwórz jednostkę</button></p>
+</form>
+{% else %}
+<p class="note">Wpisy dodaje zawodnik. Trener ogląda je tutaj i w analizie.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}Jednostka {{ item.session_date }}{% endblock %}
+{% block body %}
+<p class="note"><a href="{{ url_for('diary_list') }}">Wszystkie jednostki</a></p>
+<h1>Jednostka {{ item.session_date }}</h1>
+
+<div class="stats">
+  <div class="stat"><b>{{ summary.sets|pl(0) }}</b><span>serie</span></div>
+  <div class="stat"><b>{{ summary.volume|pl(0) }}</b><span>podniesienia</span></div>
+  <div class="stat"><b>{{ summary.tonnage|pl(0) }} kg</b><span>tonaż</span></div>
+  <div class="stat"><b>{{ summary.avg_load|pl(1) }} kg</b><span>średnie obciążenie</span></div>
+  <div class="stat"><b>{{ summary.avg_intensity|pct }}</b><span>średnia intensywność</span></div>
+  <div class="stat"><b>{{ summary.rpe_load_s|pl(0) }}</b><span>RPE-load specjalna</span></div>
+  <div class="stat"><b>{{ summary.rpe_load_w|pl(0) }}</b><span>RPE-load uzupełniająca</span></div>
+  <div class="stat"><b>{{ summary.srpe_load|pl(0) }}</b><span>sRPE-load</span></div>
+  <div class="stat"><b>{{ summary.internal_external|pl(3) }}</b><span>wewn. / zewn. (specjalna / tonaż)</span></div>
+</div>
+
+{% if me.role == 'athlete' %}
+<form method="post" class="card grid grid-4">
+  <p><label>Data</label><input type="date" name="session_date" value="{{ item.session_date }}" required></p>
+  <p><label>Nr okresu</label><input type="number" name="period_no" value="{{ item.period_no }}" required></p>
+  <p><label>Nr mikrocyklu</label><input type="number" name="micro_no" value="{{ item.micro_no }}" required></p>
+  <p><label>Nr treningu w mikrocyklu</label><input type="number" name="session_in_micro" value="{{ item.session_in_micro }}" required></p>
+  <p>
+    <label>Rodzaj</label>
+    <select name="session_type">
+      {% for code, label in session_types %}
+      <option value="{{ code }}" {% if item.session_type == code %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </p>
+  <p><label>Czas części specjalnej (min)</label><input name="time_s" value="{{ item.time_s|pl(0) }}"></p>
+  <p><label>RPE części specjalnej</label><input name="rpe_s" value="{{ item.rpe_s|pl(0) }}"></p>
+  <p><label>Czas części uzupełniającej (min)</label><input name="time_w" value="{{ item.time_w|pl(0) }}"></p>
+  <p><label>RPE części uzupełniającej</label><input name="rpe_w" value="{{ item.rpe_w|pl(0) }}"></p>
+  <p class="row-actions"><button type="submit">Zapisz nagłówek</button></p>
+</form>
+{% else %}
+<p class="note">
+  Tydzień {{ summary.week }}, okres {{ item.period_no }}, mikrocykl {{ item.micro_no }},
+  trening {{ item.session_in_micro }}, rodzaj {{ item.session_type }}.
+  Część specjalna {{ item.time_s|pl(0) }} min, RPE {{ item.rpe_s|pl(0) }}.
+  Część uzupełniająca {{ item.time_w|pl(0) }} min, RPE {{ item.rpe_w|pl(0) }}.
+</p>
+{% endif %}
+
+<table>
+  <thead>
+    <tr>
+      <th>Nr</th><th>Ćwiczenie</th><th>Kompleks</th><th>Serie</th><th>Podniesienia</th><th>kg</th><th>Rekord</th><th>Intensywność</th>
+      {% if me.role == 'athlete' %}<th></th>{% endif %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in diary %}
+    <tr>
+      <td>{{ row.exercise_no }}</td>
+      <td>{{ row.name }}</td>
+      <td>{{ complexes.get(row.complex, row.complex) }}</td>
+      <td>{{ row.sets_text }}</td>
+      <td>{{ row.reps_text }}</td>
+      <td>{{ row.load_kg|pl(1) }}</td>
+      <td>{{ row.record_name or "—" }}{% if row.record_kg %} {{ row.record_kg|pl(0) }} kg{% endif %}</td>
+      <td>
+        {% if row.record_kg %}{{ (row.load_kg / row.record_kg)|pct }}{% else %}—{% endif %}
+      </td>
+      {% if me.role == 'athlete' %}
+      <td>
+        <form method="post" action="{{ url_for('diary_delete_row', row_id=row.id) }}">
+          <button class="danger" type="submit">Usuń</button>
+        </form>
+      </td>
+      {% endif %}
+    </tr>
+    {% else %}
+    <tr><td colspan="8">Nie ma jeszcze ćwiczeń w tej jednostce.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if me.role == 'athlete' %}
+<h2>Dopisz ćwiczenie</h2>
+<form method="post" action="{{ url_for('diary_add_row', session_id=item.id) }}" class="card grid grid-4">
+  <p><label>Nazwa</label><input name="name" required></p>
+  <p>
+    <label>Kompleks</label>
+    <select name="complex">
+      {% for code, label in complexes.items() %}
+      <option value="{{ code }}">{{ label }}</option>
+      {% endfor %}
+    </select>
+  </p>
+  <p><label>Serie</label><input name="sets_text" value="3" required></p>
+  <p><label>Podniesienia</label><input name="reps_text" value="3" required></p>
+  <p><label>Obciążenie (kg)</label><input name="load_kg" required placeholder="60"></p>
+  <p>
+    <label>Rekord bazowy</label>
+    <select name="record_id">
+      <option value="">bez rekordu</option>
+      {% for record in records %}
+      <option value="{{ record.id }}">{{ record.name }} — {{ record.max_kg|pl(0) }} kg</option>
+      {% endfor %}
+    </select>
+  </p>
+  <p class="row-actions"><button type="submit">Dodaj wiersz</button></p>
+</form>
+<form method="post" action="{{ url_for('diary_delete', session_id=item.id) }}">
+  <button class="quiet" type="submit">Usuń całą jednostkę</button>
+</form>
+{% endif %}
+{% endblock %}

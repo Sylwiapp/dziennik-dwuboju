@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}Mikrocykl {{ micro.micro_no }}{% endblock %}
+{% block body %}
+<p class="note"><a href="{{ url_for('plan_list') }}">Wszystkie mikrocykle</a></p>
+<h1>Okres {{ micro.period_no }}, mikrocykl {{ micro.micro_no }}</h1>
+<p class="lead">Od {{ micro.start_date }}. Ćwiczenia uzupełniające i rozciągające dopisuje się tu do planu, obok specjalnych.</p>
+
+<div class="stats">
+  <div class="stat"><b>{{ whole.sets|pl(0) }}</b><span>serie w mikrocyklu</span></div>
+  <div class="stat"><b>{{ whole.volume|pl(0) }}</b><span>podniesienia</span></div>
+  <div class="stat"><b>{{ whole.avg_intensity|pct }}</b><span>średnia intensywność</span></div>
+  <div class="stat"><b>{{ whole.tonnage|pl(0) }}</b><span>planowany tonaż (kg)</span></div>
+</div>
+
+{% if me.role == 'coach' %}
+<form method="post" action="{{ url_for('plan_update', micro_id=micro.id) }}">
+  <div class="grid grid-4">
+    <p><label>Założenie intensywności</label><input name="intensity_note" value="{{ micro.intensity_note or '' }}"></p>
+    <p><label>Założenie objętości</label><input name="volume_note" value="{{ micro.volume_note or '' }}"></p>
+  </div>
+{% endif %}
+
+{% for block in days %}
+<section class="card">
+  <h2>{{ block.title }}</h2>
+  {% if me.role == 'coach' %}
+  <div class="grid grid-4">
+    <p><label>Obciążenie dnia</label><input name="load_{{ block.day.id }}" value="{{ block.day.load_level or '' }}" list="poziomy"></p>
+    <p><label>Notatka, np. rozgrzewka</label><input name="note_{{ block.day.id }}" value="{{ block.day.note or '' }}"></p>
+  </div>
+  {% else %}
+  <p class="note">Obciążenie dnia: {{ block.day.load_level or "—" }}. {{ block.day.note or "" }}</p>
+  {% endif %}
+
+  {% if block.exercises %}
+  <table>
+    <thead>
+      <tr>
+        <th>Ćwiczenie</th><th>Kompleks</th><th>Rodzaj</th><th>Serie</th><th>Podniesienia</th><th>Intensywność</th><th>Rekord</th>
+        {% if me.role == 'coach' %}<th></th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for exercise in block.exercises %}
+      <tr>
+        <td>{{ exercise.name }}</td>
+        <td>{{ complexes.get(exercise.complex, exercise.complex) }}</td>
+        <td>{{ exercise.kind }}</td>
+        <td>{{ exercise.sets_text }}</td>
+        <td>{{ exercise.reps_text }}</td>
+        <td>{{ exercise.intensity|pct }}</td>
+        <td>{{ exercise.record_name or "—" }}{% if exercise.record_kg %} ({{ exercise.record_kg|pl(0) }} kg){% endif %}</td>
+        {% if me.role == 'coach' %}
+        <td>
+          <button class="danger" type="submit" form="del-{{ exercise.id }}">Usuń</button>
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="note">
+    Podsumowanie dnia: {{ block.summary.sets|pl(0) }} serii,
+    {{ block.summary.volume|pl(0) }} podniesień,
+    średnia intensywność {{ block.summary.avg_intensity|pct }}.
+  </p>
+  {% else %}
+  <p class="note">Brak ćwiczeń w tym dniu.</p>
+  {% endif %}
+</section>
+{% endfor %}
+
+{% if me.role == 'coach' %}
+  <button type="submit">Zapisz opis i obciążenie dni</button>
+</form>
+{% for block in days %}
+  {% for exercise in block.exercises %}
+  <form id="del-{{ exercise.id }}" method="post" action="{{ url_for('plan_delete_exercise', exercise_id=exercise.id) }}"></form>
+  {% endfor %}
+{% endfor %}
+<datalist id="poziomy">
+  <option value="małe"></option>
+  <option value="średnie"></option>
+  <option value="duże"></option>
+  <option value="regeneracja"></option>
+</datalist>
+
+<h2>Dopisz ćwiczenie</h2>
+<form method="post" action="{{ url_for('plan_add_exercise', day_id=days[0].day.id) }}" class="card" id="nowe">
+  <div class="grid grid-4">
+    <p>
+      <label>Dzień</label>
+      <select name="day_pick" id="day-pick">
+        {% for block in days %}
+        <option value="{{ block.day.id }}">{{ block.title }}</option>
+        {% endfor %}
+      </select>
+    </p>
+    <p><label>Nazwa</label><input name="name" required placeholder="np. rwanie na siad"></p>
+    <p>
+      <label>Kompleks</label>
+      <select name="complex">
+        {% for code, label in complexes.items() %}
+        <option value="{{ code }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </p>
+    <p>
+      <label>Rodzaj</label>
+      <select name="kind">
+        {% for kind in kinds %}<option>{{ kind }}</option>{% endfor %}
+      </select>
+    </p>
+    <p><label>Serie (np. 3 albo 1+1)</label><input name="sets_text" value="3" required></p>
+    <p><label>Podniesienia (np. 2+1)</label><input name="reps_text" value="3" required></p>
+    <p><label>Intensywność (0,70 albo 70)</label><input name="intensity" placeholder="0,70"></p>
+    <p>
+      <label>Rekord bazowy</label>
+      <select name="record_id">
+        <option value="">bez rekordu</option>
+        {% for record in records %}
+        <option value="{{ record.id }}">{{ record.name }} — {{ record.max_kg|pl(0) }} kg</option>
+        {% endfor %}
+      </select>
+    </p>
+  </div>
+  <button type="submit">Dodaj do planu</button>
+</form>
+<script>
+  const pick = document.getElementById("day-pick");
+  const form = document.getElementById("nowe");
+  function syncDay() {
+    form.action = "/plan/dzien/" + pick.value + "/cwiczenie";
+  }
+  pick.addEventListener("change", syncDay);
+  syncDay();
+</script>
+{% endif %}
+
+<p><a class="button quiet" href="{{ url_for('plan_print', micro_id=micro.id) }}">Podgląd do wydruku</a></p>
+{% endblock %}

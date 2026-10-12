@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}Analiza{% endblock %}
+{% block body %}
+<h1>Analiza realizacji</h1>
+<p class="lead">
+  Objętość to liczba podniesień (serie × powtórzenia). Tonaż to serie × powtórzenia × kilogramy.
+  Średnie obciążenie to tonaż podzielony przez objętość.
+  ACWR to tonaż tego mikrocyklu podzielony przez średnią z czterech poprzednich.
+  Kompleksy C1–2, C3 i C4–5 są zgrupowane tak, jak w monitorowaniu obciążenia ciężarowców.
+</p>
+
+<h2>Jednostki treningowe</h2>
+{% if sessions %}
+<div class="scroll">
+<table>
+  <thead>
+    <tr>
+      <th>Data</th><th>Mikrocykl</th><th>Rodzaj</th><th>Serie</th><th>Podniesienia</th>
+      <th>Tonaż</th><th>Śr. kg</th><th>Śr. intens.</th><th>RPE-load S</th><th>sRPE</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in sessions %}
+    <tr>
+      <td><a href="{{ url_for('diary_detail', session_id=item.id) }}">{{ item.session_date }}</a></td>
+      <td>{{ item.period_no }}/{{ item.micro_no }}</td>
+      <td>{{ item.session_type }}</td>
+      <td>{{ item.sets|pl(0) }}</td>
+      <td>{{ item.volume|pl(0) }}</td>
+      <td>{{ item.tonnage|pl(0) }}</td>
+      <td>{{ item.avg_load|pl(1) }}</td>
+      <td>{{ item.avg_intensity|pct }}</td>
+      <td>{{ item.rpe_load_s|pl(0) }}</td>
+      <td>{{ item.srpe_load|pl(0) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p>Brak jednostek.</p>
+{% endif %}
+
+<h2>Mikrocykle</h2>
+{% if microcycles %}
+<div class="scroll">
+<table>
+  <thead>
+    <tr>
+      <th>Okres</th><th>Mikro</th><th>Jedn.</th><th>PC</th><th>Siłowe</th><th>Inne</th>
+      <th>Serie</th><th>Podniesienia</th><th>Tonaż</th><th>Śr. tonaż jedn.</th>
+      <th>Śr. kg</th><th>ACWR tonaż</th><th>RPE-load S</th><th>ACWR RPE</th>
+      <th>Czas razem</th><th>Udział uzup.</th><th>Wewn./zewn.</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in microcycles %}
+    <tr>
+      <td>{{ item.period_no }}</td>
+      <td>{{ item.micro_no }}</td>
+      <td>{{ item.sessions }}</td>
+      <td>{{ item.pc }}</td>
+      <td>{{ item.sil }}</td>
+      <td>{{ item.inne }}</td>
+      <td>{{ item.sets|pl(0) }}</td>
+      <td>{{ item.volume|pl(0) }}</td>
+      <td>{{ item.tonnage|pl(0) }}</td>
+      <td>{{ item.avg_tonnage_session|pl(0) }}</td>
+      <td>{{ item.avg_load|pl(1) }}</td>
+      <td>{{ item.acwr_tonnage|pl(2) }}</td>
+      <td>{{ item.rpe_load_s|pl(0) }}</td>
+      <td>{{ item.acwr_rpe|pl(2) }}</td>
+      <td>{{ item.time_sum|pl(0) }}</td>
+      <td>{{ item.share_time_w|pct }}</td>
+      <td>{{ item.internal_external|pl(3) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="note">ACWR pojawia się od piątego mikrocyklu, bo potrzebuje czterech wcześniejszych. Średni tonaż jednostki liczy się z treningów PC i siłowych.</p>
+{% else %}
+<p>Brak mikrocykli w dzienniku.</p>
+{% endif %}
+
+<h2>Obciążenie wg kompleksów</h2>
+{% if article %}
+<div class="scroll">
+<table>
+  <thead>
+    <tr>
+      <th>Mikrocykl</th>
+      {% for group in article[0].groups %}
+      <th>{{ group.label }} — podniesienia</th>
+      <th>tonaż</th>
+      <th>śr. kg</th>
+      {% endfor %}
+      <th>C1–5 podniesienia</th>
+      <th>C1–5 tonaż</th>
+      <th>C1–5 śr. kg</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for block in article %}
+    <tr>
+      <td>{{ block.period_no }}/{{ block.micro_no }}</td>
+      {% for group in block.groups %}
+      <td>{{ group.volume|pl(0) }}</td>
+      <td>{{ group.tonnage|pl(0) }}</td>
+      <td>{{ group.avg_load|pl(1) }}</td>
+      {% endfor %}
+      <td>{{ block.overall.volume|pl(0) }}</td>
+      <td>{{ block.overall.tonnage|pl(0) }}</td>
+      <td>{{ block.overall.avg_load|pl(1) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% set last = article[-1] %}
+<h3>Ostatni mikrocykl {{ last.period_no }}/{{ last.micro_no }} — tonaż</h3>
+{% set max_tonnage = last.overall.tonnage or 1 %}
+{% for group in last.groups %}
+<p>
+  {{ group.label }} — {{ group.tonnage|pl(0) }} kg
+  <span class="bar"><i style="width: {{ (100 * (group.tonnage or 0) / max_tonnage)|round(0) }}%"></i></span>
+</p>
+{% endfor %}
+<p class="note">Poza C1–5 (wyciskania, skoki, rozciąganie): {{ last.rest.volume|pl(0) }} podniesień, tonaż {{ last.rest.tonnage|pl(0) }} kg.</p>
+{% endif %}
+
+<h2>Plan wobec realizacji</h2>
+{% if keys %}
+<form method="get" class="grid grid-4">
+  <p>
+    <label>Mikrocykl</label>
+    <select name="mc" onchange="this.form.submit()">
+      {% for key in keys %}
+      <option value="{{ key[0] }}-{{ key[1] }}" {% if chosen == key %}selected{% endif %}>
+        okres {{ key[0] }}, mikrocykl {{ key[1] }}
+      </option>
+      {% endfor %}
+    </select>
+  </p>
+</form>
+{% endif %}
+{% if comparison %}
+<table>
+  <thead>
+    <tr>
+      <th>Dzień</th><th>Plan: podniesienia</th><th>Plan: intensywność</th><th>Plan: tonaż</th>
+      <th>Zrobione: podniesienia</th><th>Zrobione: intensywność</th><th>Zrobione: tonaż</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for day in comparison %}
+    <tr>
+      <td>{{ day.title }}<br><span class="note">{{ day.load_level }}</span></td>
+      <td>{{ day.planned.volume|pl(0) }}</td>
+      <td>{{ day.planned.avg_intensity|pct }}</td>
+      <td>{{ day.planned.tonnage|pl(0) }}</td>
+      <td>{{ day.realized.volume|pl(0) if day.has_diary else "—" }}</td>
+      <td>{{ day.realized.avg_intensity|pct if day.has_diary else "—" }}</td>
+      <td>{{ day.realized.tonnage|pl(0) if day.has_diary else "—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p class="note">Planowany tonaż powstaje z intensywności razy rekord bazowy. Dni bez wpisu w dzienniku nie mają realizacji.</p>
+{% elif chosen %}
+<p>Dla tego mikrocyklu nie ma jeszcze planu trenera. Porównanie pojawi się, gdy plan i dziennik będą miały ten sam numer okresu i mikrocyklu.</p>
+{% endif %}
+{% endblock %}

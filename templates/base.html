@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Dziennik dwuboju{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">Dziennik dwuboju</div>
+    {% if me %}
+    <nav>
+      <a href="{{ url_for('plan_list') }}" {% if request.path.startswith('/plan') %}class="here"{% endif %}>Plan</a>
+      <a href="{{ url_for('diary_list') }}" {% if request.path.startswith('/dziennik') %}class="here"{% endif %}>Dziennik</a>
+      <a href="{{ url_for('analysis') }}" {% if request.path.startswith('/analiza') %}class="here"{% endif %}>Analiza</a>
+      <a href="{{ url_for('records') }}" {% if request.path.startswith('/rekordy') %}class="here"{% endif %}>Rekordy</a>
+      <a href="{{ url_for('logout') }}">Wyloguj ({{ me.username }})</a>
+    </nav>
+    {% endif %}
+  </header>
+  <main>
+    {% with messages = get_flashed_messages() %}
+      {% for message in messages %}
+        <p class="flash">{{ message }}</p>
+      {% endfor %}
+    {% endwith %}
+    {% block body %}{% endblock %}
+  </main>
+</body>
+</html>

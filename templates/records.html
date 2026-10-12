@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Rekordy{% endblock %}
+{% block body %}
+<h1>Rekordy bazowe</h1>
+<p class="lead">Intensywność w dzienniku to kilogramy z treningu podzielone przez rekord ćwiczenia bazowego. Rekord zapisany przy wpisie zostaje, nawet gdy później zmienisz wartość na tej liście.</p>
+<div class="scroll">
+<table>
+  <thead><tr><th>Ćwiczenie bazowe</th><th>Rekord (kg)</th>{% if me.role == 'coach' %}<th></th>{% endif %}</tr></thead>
+  <tbody>
+    {% for record in records %}
+    <tr>
+      {% if me.role == 'coach' %}
+      <td><input form="rec-{{ record.id }}" name="name" value="{{ record.name }}"></td>
+      <td><input form="rec-{{ record.id }}" name="max_kg" value="{{ record.max_kg|pl(1) }}"></td>
+      <td class="row-actions">
+        <form id="rec-{{ record.id }}" method="post">
+          <input type="hidden" name="record_id" value="{{ record.id }}">
+          <button name="action" value="save" type="submit">Zapisz</button>
+          <button class="danger" name="action" value="delete" type="submit">Usuń</button>
+        </form>
+      </td>
+      {% else %}
+      <td>{{ record.name }}</td>
+      <td>{{ record.max_kg|pl(1) }}</td>
+      {% endif %}
+    </tr>
+    {% else %}
+    <tr><td colspan="3">Brak rekordów.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% if me.role == 'coach' %}
+<h2>Nowy rekord</h2>
+<form method="post" class="card grid grid-3">
+  <input type="hidden" name="action" value="add">
+  <p><label>Nazwa</label><input name="name" required placeholder="np. rwanie"></p>
+  <p><label>Kilogramy</label><input name="max_kg" required placeholder="95"></p>
+  <p class="row-actions"><button type="submit">Dodaj</button></p>
+</form>
+{% endif %}
+{% endblock %}

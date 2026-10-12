@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Logowanie{% endblock %}
+{% block body %}
+<section class="card login-box">
+  <h1>Plan i dziennik treningowy</h1>
+  <p class="lead">Trener układa mikrocykl. Zawodnik wpisuje, co zostało zrobione. Aplikacja liczy objętość, tonaż, intensywność i ACWR.</p>
+  <form method="post">
+    <p><label>Login</label><input name="username" value="trener" required></p>
+    <p><label>Hasło</label><input name="password" type="password" value="trener" required></p>
+    <button type="submit">Wejdź</button>
+  </form>
+  <p class="note">Konta próbne: <b>trener / trener</b> oraz <b>zawodnik / zawodnik</b>. Zawodniczka w przykładzie: Agata.</p>
+</section>
+{% endblock %}

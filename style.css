@@ -1,0 +1,177 @@
+:root {
+  --ink: #1c2430;
+  --muted: #5c6b7a;
+  --line: #d5dde6;
+  --paper: #f4f7fb;
+  --card: #ffffff;
+  --accent: #0f6e6e;
+  --accent-dark: #0a4f4f;
+  --warn: #8a4b08;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; }
+
+body {
+  font-family: "Segoe UI", sans-serif;
+  color: var(--ink);
+  background: var(--paper);
+  line-height: 1.45;
+  font-size: 16px;
+}
+
+button, input, select, textarea { font: inherit; }
+
+a { color: var(--accent-dark); }
+
+#app { min-height: 100dvh; }
+
+.top {
+  background: var(--accent-dark);
+  color: white;
+  padding: 12px 16px calc(12px + env(safe-area-inset-top));
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.top strong { font-size: 1rem; }
+.top strong, .top small { display: block; }
+.top .sync { color: rgba(255, 255, 255, 0.72); font-size: 0.72rem; }
+.role-pill {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 99px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+}
+
+main {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px 14px calc(88px + env(safe-area-inset-bottom));
+}
+
+h1 { font-size: 1.45rem; margin: 0 0 8px; }
+h2 { font-size: 1.05rem; margin: 18px 0 8px; }
+.lead, .note { color: var(--muted); }
+.lead { margin-top: 0; }
+
+.card, details.day {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin: 10px 0;
+}
+
+.card { padding: 14px; }
+
+details.day > summary {
+  padding: 14px;
+  font-weight: 650;
+  cursor: pointer;
+  list-style: none;
+}
+
+details.day > summary::-webkit-details-marker { display: none; }
+
+details.day > summary span {
+  display: block;
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.ex, .day-body { padding: 0 14px 12px; }
+.ex { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 8px; }
+.ex b { display: block; }
+
+label { display: block; font-size: 0.82rem; color: var(--muted); margin: 8px 0 4px; }
+
+input, select, textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: white;
+  font-size: 16px;
+}
+
+textarea { min-height: 64px; }
+
+button, .button {
+  background: var(--accent);
+  color: white;
+  border: 0;
+  border-radius: 10px;
+  padding: 12px 14px;
+  text-decoration: none;
+  display: inline-block;
+  text-align: center;
+}
+
+button.block, .button.block { width: 100%; margin-top: 8px; }
+button.quiet, .button.quiet { background: #e7eef2; color: var(--ink); }
+button.danger { background: #8d3b3b; }
+.gate button { margin-top: 8px; }
+
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
+.stat { background: #eef6f6; border-radius: 10px; padding: 10px; }
+.stat b { display: block; font-size: 1.05rem; }
+.stat span { color: var(--muted); font-size: 0.78rem; }
+
+.flash {
+  background: #fff4e5;
+  border: 1px solid #f0d0a0;
+  color: var(--warn);
+  padding: 10px 12px;
+  border-radius: 10px;
+}
+
+.bar { height: 12px; background: #e3ebf2; border-radius: 99px; overflow: hidden; margin-top: 4px; }
+.bar > i { display: block; height: 100%; background: var(--accent); }
+
+.dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  background: var(--accent-dark);
+  padding-bottom: env(safe-area-inset-bottom);
+  z-index: 3;
+}
+
+.dock a {
+  flex: 1;
+  color: rgba(255, 255, 255, 0.78);
+  text-decoration: none;
+  text-align: center;
+  padding: 10px 2px 12px;
+  font-size: 0.78rem;
+}
+
+.dock a.here { color: white; font-weight: 700; }
+
+.scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.85rem; min-width: 640px; }
+th, td { border-bottom: 1px solid var(--line); text-align: left; padding: 8px; vertical-align: top; }
+th { color: var(--muted); font-weight: 600; }
+
+.linkish { background: none; color: var(--accent-dark); padding: 0; }
+
+@media (min-width: 800px) {
+  .stats { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media print {
+  .dock, .top, .no-print { display: none !important; }
+  main { max-width: none; padding: 0; }
+  details.day { break-inside: avoid; }
+  details.day > summary { display: none; }
+  details.day .day-print-title { display: block; }
+}
