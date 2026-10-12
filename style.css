@@ -149,6 +149,13 @@ button.danger { background: #8d3b3b; }
 .bar { height: 12px; background: #e3ebf2; border-radius: 99px; overflow: hidden; margin-top: 4px; }
 .bar > i { display: block; height: 100%; background: var(--accent); }
 
+.chart-card b { display: block; }
+.chart { width: 100%; height: auto; display: block; margin-top: 8px; }
+.chart .grid { stroke: #e3ebf2; stroke-width: 1; }
+.chart .axis { fill: var(--muted); font-size: 11px; }
+.legend { display: flex; flex-wrap: wrap; gap: 12px; margin: 8px 0 0; color: var(--muted); font-size: 0.85rem; }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+
 .dock {
   position: fixed;
   left: 0;

@@ -709,6 +709,113 @@ function analysisModel() {
   return { summaries, microcycles, article };
 }
 
+function niceMax(values) {
+  const present = values.map(Number).filter((value) => Number.isFinite(value) && value > 0);
+  const max = present.length ? Math.max(...present) : 1;
+  const power = 10 ** Math.floor(Math.log10(max));
+  const step = max / power;
+  const nice = step <= 1 ? 1 : step <= 2 ? 2 : step <= 5 ? 5 : 10;
+  return nice * power;
+}
+
+function chartAxis(value, mode) {
+  if (mode === "pct") return `${Math.round(value * 100)}%`;
+  if (mode === "ratio") return pl(value, value >= 10 ? 0 : 1);
+  if (value >= 1000) return `${Math.round(value / 100) / 10} tys.`;
+  return pl(value, value >= 100 ? 0 : 1);
+}
+
+function lineChart(series, mode, ceiling) {
+  const labels = series[0]?.points.map((point) => point.label) || [];
+  if (!labels.length) return `<p class="note">Brak danych do wykresu.</p>`;
+  const left = 46;
+  const right = 350;
+  const top = 14;
+  const bottom = 158;
+  const max = ceiling || niceMax(series.flatMap((item) => item.points.map((point) => point.value)));
+  const x = (index) => (labels.length === 1 ? (left + right) / 2 : left + ((right - left) * index) / (labels.length - 1));
+  const y = (value) => bottom - ((bottom - top) * value) / max;
+  const grid = [0, 0.5, 1].map((part) => {
+    const yy = y(max * part).toFixed(1);
+    return `<line x1="${left}" y1="${yy}" x2="${right}" y2="${yy}" class="grid"></line><text x="2" y="${Number(yy) + 4}" class="axis">${esc(chartAxis(max * part, mode))}</text>`;
+  }).join("");
+  const drawn = series.map((item) => {
+    const coords = item.points.map((point, index) => (
+      point.value == null || Number.isNaN(Number(point.value)) ? null : [x(index), y(Number(point.value))]
+    ));
+    let path = "";
+    let drawing = false;
+    coords.forEach((coord) => {
+      if (!coord) {
+        drawing = false;
+        return;
+      }
+      path += `${drawing ? "L" : "M"}${coord[0].toFixed(1)},${coord[1].toFixed(1)}`;
+      drawing = true;
+    });
+    const dots = coords.map((coord) => (coord ? `<circle cx="${coord[0].toFixed(1)}" cy="${coord[1].toFixed(1)}" r="3.4" fill="${item.color}"></circle>` : "")).join("");
+    return `<path d="${path}" fill="none" stroke="${item.color}" stroke-width="2.4"></path>${dots}`;
+  }).join("");
+  const labelsSvg = labels.map((label, index) => `<text x="${x(index).toFixed(1)}" y="178" text-anchor="middle" class="axis">${esc(label)}</text>`).join("");
+  return `<svg class="chart" viewBox="0 0 360 196" role="img">${grid}${drawn}${labelsSvg}</svg>`;
+}
+
+function groupedBarChart(categories, series, mode, ceiling) {
+  if (!categories.length) return `<p class="note">Brak danych do wykresu.</p>`;
+  const left = 46;
+  const right = 350;
+  const top = 14;
+  const bottom = 158;
+  const max = ceiling || niceMax(series.flatMap((item) => item.values));
+  const y = (value) => bottom - ((bottom - top) * Number(value || 0)) / max;
+  const groupWidth = (right - left) / categories.length;
+  const barWidth = Math.min(12, (groupWidth - 6) / series.length);
+  const grid = [0, 0.5, 1].map((part) => {
+    const yy = y(max * part).toFixed(1);
+    return `<line x1="${left}" y1="${yy}" x2="${right}" y2="${yy}" class="grid"></line><text x="2" y="${Number(yy) + 4}" class="axis">${esc(chartAxis(max * part, mode))}</text>`;
+  }).join("");
+  const bars = categories.map((label, index) => {
+    const origin = left + groupWidth * index + (groupWidth - barWidth * series.length) / 2;
+    const rects = series.map((item, seriesIndex) => {
+      const value = Number(item.values[index]);
+      if (!Number.isFinite(value) || value <= 0) return "";
+      const yy = y(value);
+      return `<rect x="${(origin + seriesIndex * barWidth).toFixed(1)}" y="${yy.toFixed(1)}" width="${barWidth - 1}" height="${(bottom - yy).toFixed(1)}" fill="${item.color}" rx="2"></rect>`;
+    }).join("");
+    return `${rects}<text x="${(left + groupWidth * index + groupWidth / 2).toFixed(1)}" y="176" text-anchor="middle" class="axis">${esc(label)}</text>`;
+  }).join("");
+  return `<svg class="chart" viewBox="0 0 360 192" role="img">${grid}${bars}</svg>`;
+}
+
+function chartLegend(items) {
+  return `<p class="legend">${items.map((item) => `<span><i style="background:${item.color}"></i>${esc(item.name)}</span>`).join("")}</p>`;
+}
+
+function shortWeekday(iso) {
+  const [year, month, day] = iso.split("-").map(Number);
+  return ["nd", "pn", "wt", "śr", "cz", "pt", "sb"][new Date(Date.UTC(year, month - 1, day)).getUTCDay()];
+}
+
+function weekdayLoad(cycle) {
+  return cycle.days.map((day) => {
+    const date = dayDate(cycle.startDate, day.dayIndex);
+    const specialPlan = day.exercises.filter((exercise) => exercise.kind === "specjalne");
+    const plannedAll = summarizePlan(day.exercises.map(planExerciseRow));
+    const plannedSpecial = summarizePlan(specialPlan.map(planExerciseRow));
+    const realized = state.sessions.filter((session) => session.date === date).flatMap((session) => session.rows);
+    const realizedSpecial = realized.filter((row) => ["C1", "C2", "C3"].includes(row.complex));
+    const all = summarizeSession(realized.map(diaryRow), 0, 0, 0, 0);
+    const special = summarizeSession(realizedSpecial.map(diaryRow), 0, 0, 0, 0);
+    return {
+      label: shortWeekday(date),
+      planIntensity: specialPlan.length ? plannedSpecial.avg_intensity : null,
+      realIntensity: realizedSpecial.length ? special.avg_intensity : null,
+      planLifts: day.exercises.length ? plannedAll.volume : null,
+      realLifts: realized.length ? all.volume : null,
+    };
+  });
+}
+
 function renderAnalysis(arg) {
   const { microcycles, article } = analysisModel();
   const keys = microcycles.map((item) => `${item.period_no}-${item.micro_no}`);
@@ -718,58 +825,71 @@ function renderAnalysis(arg) {
   });
   keys.sort();
   const chosen = keys.includes(arg) ? arg : keys[keys.length - 1];
-  const cards = microcycles.map((item) => `
-    <article class="card">
-      <b>Okres ${item.period_no}, mikrocykl ${item.micro_no}</b>
-      <p class="note">${item.sessions} jedn. · PC ${item.pc} · siłowe ${item.sil} · inne ${item.inne}</p>
-      <div class="stats">
-        <div class="stat"><b>${pl(item.tonnage, 0)} kg</b><span>tonaż</span></div>
-        <div class="stat"><b>${pl(item.volume, 0)}</b><span>podniesienia</span></div>
-        <div class="stat"><b>${pl(item.avg_load, 1)} kg</b><span>średnie obciążenie</span></div>
-        <div class="stat"><b>${pl(item.acwr_tonnage, 2)}</b><span>ACWR tonażu</span></div>
-      </div>
-    </article>`).join("");
-  const last = article[article.length - 1];
-  const maxTonnage = last ? Math.max(...last.groups.map((group) => group.tonnage || 0), 1) : 1;
-  const bars = last ? last.groups.map((group) => `
-    <p>${esc(group.label)} — ${pl(group.tonnage, 0)} kg
-      <span class="bar"><i style="width:${Math.round(100 * (group.tonnage || 0) / maxTonnage)}%"></i></span>
-    </p>`).join("") : "";
-  let comparison = "";
+  const labels = article.map((item) => `${item.period_no}.${item.micro_no}`);
+  const latest = article[article.length - 1];
+  const kpis = latest ? `
+    <div class="stats">
+      <div class="stat"><b>${pl(latest.tonnage, 0)} kg</b><span>tonaż ostatniego mikrocyklu</span></div>
+      <div class="stat"><b>${pl(latest.volume, 0)}</b><span>podniesienia</span></div>
+      <div class="stat"><b>${pl(latest.avg_load, 1)} kg</b><span>średnie obciążenie</span></div>
+      <div class="stat"><b>${pl(latest.acwr_tonnage, 2)}</b><span>ACWR tonażu</span></div>
+    </div>` : "";
+  const tonnageChart = article.length ? `<section class="card chart-card"><b>Tonaż mikrocykli</b><p class="note">Suma kilogramów zrealizowanych w mikrocyklu, jak w arkuszu mikrocykli.</p>${lineChart([{ color: "#0f6e6e", points: article.map((item, index) => ({ label: labels[index], value: item.tonnage })) }], "kg")}</section>` : "";
+  const volumeChart = article.length ? `<section class="card chart-card"><b>Liczba podniesień</b><p class="note">Objętość kolejnych mikrocykli.</p>${lineChart([{ color: "#0a4f4f", points: article.map((item, index) => ({ label: labels[index], value: item.volume })) }], "count")}</section>` : "";
+  const acwrReady = article.some((item) => item.acwr_tonnage != null);
+  const acwrChart = article.length ? `<section class="card chart-card"><b>ACWR</b><p class="note">Bieżący mikrocykl podzielony przez średnią z czterech poprzednich. Linia pojawia się od piątego mikrocyklu. Wartość 1 oznacza obciążenie równe tej średniej.</p>${lineChart([
+    { color: "#0f6e6e", points: article.map((item, index) => ({ label: labels[index], value: item.acwr_tonnage })) },
+    { color: "#8d3b3b", points: article.map((item, index) => ({ label: labels[index], value: item.acwr_rpe })) },
+  ], "ratio", Math.max(1.5, niceMax(article.flatMap((item) => [item.acwr_tonnage, item.acwr_rpe]))))}${chartLegend([{ color: "#0f6e6e", name: "tonaż" }, { color: "#8d3b3b", name: "RPE-load" }])}${acwrReady ? "" : `<p class="note">Potrzeba co najmniej pięciu mikrocykli z dziennika.</p>`}</section>` : "";
+  const chosenArticle = article.find((item) => `${item.period_no}-${item.micro_no}` === chosen) || latest;
+  const complexChart = chosenArticle ? `<section class="card chart-card"><b>Tonaż kompleksów</b><p class="note">Okres ${chosenArticle.period_no}, mikrocykl ${chosenArticle.micro_no}. Grupy jak w monitorowaniu z artykułu.</p>${groupedBarChart(
+    ["C1–2", "C3", "C4–5"],
+    [{ color: "#0f6e6e", values: chosenArticle.groups.map((group) => group.tonnage) }],
+    "kg",
+  )}</section>` : "";
+  let weekCharts = "";
   if (chosen) {
     const [periodNo, microNo] = chosen.split("-").map(Number);
     const cycle = state.microcycles.find((item) => item.periodNo === periodNo && item.microNo === microNo);
     if (cycle) {
-      const days = cycle.days.map((day) => {
-        const date = dayDate(cycle.startDate, day.dayIndex);
-        const planned = summarizePlan(day.exercises.map(planExerciseRow));
-        const realizedRows = state.sessions
-          .filter((session) => session.date === date)
-          .flatMap((session) => session.rows.map(diaryRow));
-        const realized = summarizeSession(realizedRows, 0, 0, 0, 0);
-        return `<article class="card">
-          <b>${esc(weekday(date))} ${prettyDate(date)}</b>
-          <p class="note">${esc(day.loadLevel || "")}</p>
-          <div>Plan: ${pl(planned.volume, 0)} podniesień, ${pct(planned.avg_intensity)}, tonaż ${pl(planned.tonnage, 0)} kg</div>
-          <div>Zrobione: ${realizedRows.length ? `${pl(realized.volume, 0)} podniesień, ${pct(realized.avg_intensity)}, tonaż ${pl(realized.tonnage, 0)} kg` : "brak wpisu"}</div>
-        </article>`;
-      }).join("");
-      comparison = days;
+      const days = weekdayLoad(cycle);
+      const dayLabels = days.map((day) => day.label);
+      weekCharts = `
+        <section class="card chart-card">
+          <b>Intensywność środków specjalnych</b>
+          <p class="note">Średnia ważona objętością, dzień po dniu. W planie liczone są ćwiczenia specjalne, w realizacji kompleksy C1–C3.</p>
+          ${groupedBarChart(dayLabels, [
+            { color: "#d0893a", values: days.map((day) => day.planIntensity) },
+            { color: "#0f6e6e", values: days.map((day) => day.realIntensity) },
+          ], "pct", 1)}
+          ${chartLegend([{ color: "#d0893a", name: "plan" }, { color: "#0f6e6e", name: "realizacja" }])}
+        </section>
+        <section class="card chart-card">
+          <b>Liczba podniesień w dniach</b>
+          <p class="note">Całe obciążenie dnia, tak jak wykres „analiza obciążenia” w planie tygodnia.</p>
+          ${groupedBarChart(dayLabels, [
+            { color: "#d0893a", values: days.map((day) => day.planLifts) },
+            { color: "#0f6e6e", values: days.map((day) => day.realLifts) },
+          ], "count")}
+          ${chartLegend([{ color: "#d0893a", name: "plan" }, { color: "#0f6e6e", name: "realizacja" }])}
+        </section>`;
     } else {
-      comparison = `<p>Dla mikrocyklu ${esc(chosen)} nie ma planu trenera.</p>`;
+      weekCharts = `<p>Dla mikrocyklu ${esc(chosen)} nie ma planu trenera.</p>`;
     }
   }
-  const select = keys.length ? `<label>Mikrocykl do porównania</label><select data-action="pick-micro">${keys.map((key) => `<option value="${esc(key)}" ${key === chosen ? "selected" : ""}>okres ${esc(key.replace("-", ", mikrocykl "))}</option>`).join("")}</select>` : "";
+  const select = keys.length ? `<label>Mikrocykl na wykresach dni</label><select data-action="pick-micro">${keys.map((key) => `<option value="${esc(key)}" ${key === chosen ? "selected" : ""}>okres ${esc(key.replace("-", ", mikrocykl "))}</option>`).join("")}</select>` : "";
   shell("analiza", `
     <h1>Analiza</h1>
-    <p class="lead">Objętość to podniesienia. Tonaż to serie × podniesienia × kg. ACWR to tonaż mikrocyklu podzielony przez średnią z czterech poprzednich. Pojawia się od piątego mikrocyklu.</p>
-    ${cards || "<p>Brak jednostek.</p>"}
-    <h2>Tonaż ostatniego mikrocyklu wg kompleksów</h2>
-    ${bars}
-    <h2>Plan wobec realizacji</h2>
+    <p class="lead">Te same wielkości co w arkuszach trenera: tonaż, podniesienia, intensywność i ACWR. Wykresy liczą się same z planu i dziennika wybranego zawodnika.</p>
+    ${kpis}
+    ${tonnageChart}
+    ${volumeChart}
+    ${acwrChart}
     ${select}
-    ${comparison}
-    <button class="block" type="button" data-action="export-excel">Pobierz Excel</button>
+    ${complexChart}
+    ${weekCharts}
+    ${article.length || state.microcycles.length ? "" : "<p>Brak planu i dziennika.</p>"}
+    <button class="block no-print" type="button" data-action="export-excel">Pobierz Excel</button>
   `, true);
 }
 
