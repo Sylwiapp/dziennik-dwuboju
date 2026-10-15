@@ -545,6 +545,12 @@ function renderGate() {
           <span>Hasło: Testowa1234</span>
           <button class="quiet block" type="button" data-action="fill-demo" data-email="zawodniczka.testowa@example.com" data-password="Testowa1234">Zaloguj jako drugiego zawodnika</button>
         </div>
+        <div class="demo-account">
+          <b>Junior Testowy</b>
+          <code>junior.testowy@example.com</code>
+          <span>Hasło: Junior1234</span>
+          <button class="quiet block" type="button" data-action="fill-demo" data-email="junior.testowy@example.com" data-password="Junior1234">Zaloguj jako trzeciego zawodnika</button>
+        </div>
       </div>
     </section>
     <details class="day">
