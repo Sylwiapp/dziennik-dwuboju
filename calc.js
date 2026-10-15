@@ -178,6 +178,75 @@ function articleByGroup(rows) {
   return { groups, overall, rest };
 }
 
+function monotony(values) {
+  const numbers = values.filter((value) => Number.isFinite(value) && value > 0);
+  if (numbers.length < 2) return null;
+  const mean = numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
+  const variance = numbers.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (numbers.length - 1);
+  const spread = Math.sqrt(variance);
+  if (!spread) return mean > 0 ? 99 : null;
+  return mean / spread;
+}
+
+function relativeChange(current, previous) {
+  if (current == null || previous == null || !previous) return null;
+  return current / previous - 1;
+}
+
+const SINCLAIR = {
+  M: { a: 0.70076782, b: 201.159 },
+  K: { a: 0.674107991, b: 163.918 },
+};
+
+function sinclairTotal(total, bodyKg, sex) {
+  const coef = SINCLAIR[sex];
+  const lifted = num(total);
+  const body = num(bodyKg);
+  if (!coef || !(lifted > 0) || !(body > 0)) return null;
+  if (body >= coef.b) return lifted;
+  const log = Math.log10(body / coef.b);
+  return lifted * 10 ** (coef.a * log * log);
+}
+
+function qPoints(total, bodyKg) {
+  const lifted = num(total);
+  const body = num(bodyKg);
+  if (!(lifted > 0) || !(body > 0)) return null;
+  const scaled = body / 100;
+  const denominator = 266.5 - 19.44 * scaled ** -2 + 18.61 * scaled ** 2;
+  if (!denominator) return null;
+  return lifted * (306.54 / denominator);
+}
+
+const TEI_LIFTS = [
+  ["BS", "przysiad tył", "BS", 1, 0],
+  ["FS", "przysiad przód", "FS", 0.87, 0.03],
+  ["SN", "rwanie", "SN", 0.62, 0.02],
+  ["PSN", "rwanie siłowe", "PSN", 0.527, 0.02],
+  ["CnJ", "dwubój", "CnJ", 0.8, 0.03],
+  ["C", "zarzut", "C", 0.8, 0.03],
+  ["J", "podrzut", "J", 0.8, 0.03],
+  ["PC", "zarzut siłowy", "PC", 0.68, 0.03],
+];
+
+function teiProfile(values) {
+  const source = values || {};
+  const squat = num(source.BS);
+  const rows = TEI_LIFTS.map(([key, label, short, ref, tolerance]) => {
+    const kg = num(source[key]);
+    return {
+      key,
+      label,
+      short,
+      ref,
+      tolerance,
+      kg,
+      actual: squat > 0 && kg > 0 ? kg / squat : null,
+    };
+  }).filter((row) => row.kg > 0);
+  return { squat, rows };
+}
+
 function summarizePlan(exercises) {
   let sets = 0;
   let volume = 0;
@@ -231,5 +300,16 @@ if (typeof window === "undefined") {
   const micros = summarizeMicrocycles(sessions);
   const expected = 250 / ((100 + 200 + 300 + 400) / 4);
   if (Math.abs(micros[4].acwr_tonnage - expected) > 1e-9) throw new Error("acwr mismatch");
+  const even = monotony([10, 10, 10, 10]);
+  const uneven = monotony([2, 2, 2, 20]);
+  if (!(even > uneven)) throw new Error("monotony mismatch");
+  const sinclair = sinclairTotal(200, 60, "K");
+  if (!(sinclair > 200)) throw new Error("sinclair mismatch");
+  const points = qPoints(205, 60);
+  if (!(points > 205)) throw new Error("q-points mismatch");
+  const profile = teiProfile({ BS: 155, SN: 95 });
+  if (Math.abs(profile.rows.find((row) => row.key === "SN").actual - 95 / 155) > 1e-9) {
+    throw new Error("tei mismatch");
+  }
   console.log("calc ok");
 }
