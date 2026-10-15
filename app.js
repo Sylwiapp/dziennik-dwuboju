@@ -36,6 +36,7 @@ let supabaseClient = null;
 let recoveryMode = false;
 let message = "";
 let roster = [];
+let inviteCode = "";
 
 const RPE_NOTE = "RPE: 5 to umiarkowanie, 7 ciężko, 9 bardzo ciężko. RPE-load liczy się jako minuty razy RPE.";
 
@@ -194,6 +195,48 @@ function weekday(iso) {
 function prettyDate(iso) {
   const [year, month, day] = iso.split("-");
   return `${day}.${month}.${year}`;
+}
+
+function shortDate(iso) {
+  const [, month, day] = iso.split("-");
+  return `${day}.${month}`;
+}
+
+function weekSpan(cycle) {
+  const start = dayDate(cycle.startDate, 1);
+  const end = dayDate(cycle.startDate, 7);
+  const range = start.slice(0, 4) === end.slice(0, 4)
+    ? `${shortDate(start)}–${shortDate(end)}`
+    : `${prettyDate(start)}–${prettyDate(end)}`;
+  return `${range}, mikrocykl ${cycle.microNo}`;
+}
+
+const DAY_GENITIVE = {
+  niedziela: "niedzieli",
+  poniedziałek: "poniedziałku",
+  wtorek: "wtorku",
+  środa: "środy",
+  czwartek: "czwartku",
+  piątek: "piątku",
+  sobota: "soboty",
+};
+
+function joinDays(names) {
+  if (!names.length) return "";
+  if (names.length === 1) return names[0];
+  return `${names.slice(0, -1).join(", ")} i ${names.at(-1)}`;
+}
+
+function screenAfterAthleteSwitch() {
+  const parts = location.hash.replace("#", "").split("/");
+  const name = parts[0] || "plan";
+  if (name === "analiza") {
+    const section = ["tydzien", "mikrocykle", "start"].includes(parts[1]) ? parts[1] : "tydzien";
+    return `#analiza/${section}`;
+  }
+  if (name === "dziennik") return "#dziennik";
+  if (name === "wiecej") return "#wiecej";
+  return "#plan";
 }
 
 function dayDate(start, dayIndex) {
@@ -430,7 +473,9 @@ function shell(title, body, dock) {
 
 function render() {
   const hash = location.hash.replace("#", "") || (role === "athlete" ? "dziennik" : "plan");
-  const [name, arg] = hash.split("/");
+  const parts = hash.split("/");
+  const name = parts[0];
+  const arg = parts[1];
   if (recoveryMode) {
     renderPasswordRecovery();
     return;
@@ -448,7 +493,7 @@ function render() {
   else if (name === "druk" && arg) renderPrint(Number(arg));
   else if (name === "dziennik" && arg) renderDiary(Number(arg));
   else if (name === "dziennik") renderDiaryList();
-  else if (name === "analiza") renderAnalysis(arg || "");
+  else if (name === "analiza") renderAnalysis(parts[1] || "tydzien", parts[2] || "");
   else renderMore();
 }
 
@@ -536,18 +581,31 @@ function renderCoachStart() {
   shell("wiecej", `
     <h1>Dodaj pierwszego zawodnika</h1>
     <p class="lead">Wygeneruj kod i wyślij go zawodnikowi. Zawodnik zakłada własne konto, a następnie wpisuje kod w zakładce Więcej.</p>
-    <button class="block" type="button" data-action="create-invite">Wygeneruj kod zaproszenia</button>
-    <p class="note">Kod jest jednorazowy i ważny przez 7 dni.</p>
+    ${inviteCard()}
     <button class="quiet block" type="button" data-action="refresh-account">Odśwież listę po dołączeniu zawodnika</button>
     <button class="quiet block" type="button" data-action="sign-out">Wyloguj</button>
   `, false);
 }
 
+function inviteCard() {
+  if (!inviteCode) {
+    return `<button class="block" type="button" data-action="create-invite">Nowe zaproszenie dla zawodnika</button>
+      <p class="note">Kod jest jednorazowy i ważny przez 7 dni.</p>`;
+  }
+  return `<section class="card">
+    <b>Kod zaproszenia</b>
+    <p class="invite-code">${esc(inviteCode)}</p>
+    <p class="note">Ważny 7 dni i działa jeden raz. Zostaje na tym ekranie, dopóki nie wygenerujesz nowego.</p>
+    <button class="block" type="button" data-action="copy-invite">Kopiuj kod</button>
+    <button class="quiet block" type="button" data-action="create-invite">Wygeneruj nowy kod</button>
+  </section>`;
+}
+
 function renderPlanList() {
   const cards = state.microcycles.map((cycle) => `
     <a class="card" href="#plan/${cycle.id}" style="display:block;text-decoration:none;color:inherit">
-      <b>Okres ${cycle.periodNo}, mikrocykl ${cycle.microNo}</b>
-      <span class="note">od ${prettyDate(cycle.startDate)}</span>
+      <b>${esc(weekSpan(cycle))}</b>
+      <span class="note">okres ${cycle.periodNo}</span>
       <div>${esc(cycle.intensityNote || "")}</div>
     </a>`).join("");
   const form = role === "coach" ? `
@@ -572,10 +630,30 @@ function renderPlan(id) {
   }
   const all = summarizePlan(cycle.days.flatMap((day) => day.exercises.map(planExerciseRow)));
   const firstOpen = cycle.days.find((day) => day.exercises.length);
+  const missing = cycle.days.filter((day) => {
+    const date = dayDate(cycle.startDate, day.dayIndex);
+    const logged = state.sessions.some((session) => session.date === date && session.rows.length);
+    return day.exercises.length && !logged;
+  }).map((day) => DAY_GENITIVE[weekday(dayDate(cycle.startDate, day.dayIndex))]);
+  const coverage = !cycle.days.some((day) => day.exercises.length)
+    ? "W tym mikrocyklu nie ma jeszcze ćwiczeń w planie."
+    : missing.length
+      ? `W tym mikrocyklu brakuje ${joinDays(missing)}.`
+      : "Wszystkie dni z planu mają wpis w dzienniku.";
   const days = cycle.days.map((day) => {
     const date = dayDate(cycle.startDate, day.dayIndex);
     const summary = summarizePlan(day.exercises.map(planExerciseRow));
-    const existingSession = state.sessions.find((session) => session.date === date);
+    const existingSession = state.sessions.find((session) => session.date === date && session.rows.length)
+      || state.sessions.find((session) => session.date === date);
+    const realizedRows = state.sessions.filter((session) => session.date === date).flatMap((session) => session.rows);
+    const realized = summarizeSession(realizedRows.map(diaryRow), 0, 0, 0, 0);
+    const logged = realizedRows.length > 0;
+    let realization = "Brak wpisu.";
+    if (logged && day.exercises.length) {
+      realization = `Wpisane: ${pl(realized.volume, 0)} podniesień zamiast ${pl(summary.volume, 0)} z planu.`;
+    } else if (logged) {
+      realization = `Wpisane: ${pl(realized.volume, 0)} podniesień.`;
+    }
     const exercises = day.exercises.map((exercise) => {
       const record = recordById(exercise.recordId);
       return `<div class="ex">
@@ -616,10 +694,15 @@ function renderPlan(id) {
               data-date="${date}" data-period="${cycle.periodNo}" data-micro="${cycle.microNo}">Wpisz realizację tego dnia</button>`}
       `;
     const open = day === firstOpen ? "open" : "";
+    const diaryLink = existingSession
+      ? `<a class="button quiet block" href="#dziennik/${existingSession.id}">Otwórz wpis z dziennika</a>`
+      : "";
     return `<details class="day" ${open}>
-      <summary>${esc(weekday(date))} ${prettyDate(date)}<span>${esc(day.loadLevel || "bez poziomu")} · ${pl(summary.volume, 0)} podniesień</span></summary>
+      <summary>${esc(weekday(date))} ${prettyDate(date)}<span>${esc(day.loadLevel || "bez poziomu")} · plan ${pl(summary.volume, 0)} podniesień · ${logged ? `wpisane ${pl(realized.volume, 0)}` : "brak wpisu"}</span></summary>
       <div class="day-body">
         <p class="day-print-title" hidden><b>${esc(weekday(date))} ${prettyDate(date)}</b></p>
+        <p>${realization}</p>
+        ${role === "coach" ? diaryLink : ""}
         ${editor}
         ${exercises || `<p class="note">Brak ćwiczeń.</p>`}
         <p class="note">Dzień: ${pl(summary.sets, 0)} serii, ${pl(summary.volume, 0)} podniesień, średnio ${pct(summary.avg_intensity)}.</p>
@@ -645,8 +728,10 @@ function renderPlan(id) {
     </form>` : "";
   shell("plan", `
     <p><a href="#plan">Wszystkie mikrocykle</a></p>
-    <h1>Okres ${cycle.periodNo}, mikrocykl ${cycle.microNo}</h1>
-    <p class="lead">Od ${prettyDate(cycle.startDate)}. ${esc(cycle.intensityNote || "")}</p>
+    <h1>${esc(weekSpan(cycle))}</h1>
+    <p class="lead">Okres ${cycle.periodNo}. ${esc(cycle.intensityNote || "")}</p>
+    <p>${coverage}</p>
+    <p class="no-print"><a class="button block" href="#druk/${cycle.id}">Pokaż plan do druku</a></p>
     <div class="stats">
       <div class="stat"><b>${pl(all.sets, 0)}</b><span>serie</span></div>
       <div class="stat"><b>${pl(all.volume, 0)}</b><span>podniesienia</span></div>
@@ -656,7 +741,6 @@ function renderPlan(id) {
     ${notes}
     ${days}
     <datalist id="poziomy"><option value="małe"></option><option value="średnie"></option><option value="duże"></option><option value="regeneracja"></option></datalist>
-    <p class="no-print"><a class="button quiet block" href="#druk/${cycle.id}">Podgląd do wydruku</a></p>
   `, true);
 }
 
@@ -675,21 +759,36 @@ function renderPrint(id) {
   shell("plan", `
     <p class="no-print"><a href="#plan/${cycle.id}">Wróć</a></p>
     <h1>Plan treningowy</h1>
-    <p>Okres ${cycle.periodNo}, mikrocykl ${cycle.microNo}, od ${prettyDate(cycle.startDate)}.</p>
+    <p>${esc(weekSpan(cycle))}, okres ${cycle.periodNo}.</p>
     ${days}
     <button class="block no-print" type="button" onclick="window.print()">Drukuj albo zapisz jako PDF</button>
   `, false);
 }
 
+function sessionCard(session) {
+  const summary = sessionSummary(session);
+  return `<a class="card" href="#dziennik/${session.id}" style="display:block;text-decoration:none;color:inherit">
+    <b>${prettyDate(session.date)}</b>
+    <span class="note">mikrocykl ${session.periodNo}/${session.microNo} · ${esc(session.sessionType)}</span>
+    <div>${pl(summary.tonnage, 0)} kg tonażu · ${pct(summary.avg_intensity)} · RPE-load ${pl(summary.srpe_load, 0)}${session.bodyKg ? ` · ${pl(session.bodyKg, 1)} kg` : ""}</div>
+  </a>`;
+}
+
 function renderDiaryList() {
-  const cards = [...state.sessions].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id).map((session) => {
-    const summary = sessionSummary(session);
-    return `<a class="card" href="#dziennik/${session.id}" style="display:block;text-decoration:none;color:inherit">
-      <b>${prettyDate(session.date)}</b>
-      <span class="note">mikrocykl ${session.periodNo}/${session.microNo} · ${esc(session.sessionType)}</span>
-      <div>${pl(summary.tonnage, 0)} kg tonażu · ${pct(summary.avg_intensity)} · RPE-load ${pl(summary.srpe_load, 0)}${session.bodyKg ? ` · ${pl(session.bodyKg, 1)} kg` : ""}</div>
-    </a>`;
-  }).join("");
+  const sorted = [...state.sessions].sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+  const latest = sorted[0];
+  const current = role === "coach" && latest
+    ? sorted.filter((session) => session.periodNo === latest.periodNo && session.microNo === latest.microNo)
+    : sorted;
+  const older = role === "coach" ? sorted.filter((session) => !current.includes(session)) : [];
+  const latestSummary = latest ? sessionSummary(latest) : null;
+  const coachLead = latest
+    ? `Ostatni wpis ${prettyDate(latest.date)}, tonaż ${pl(latestSummary.tonnage, 0)} kg. Poniżej jest bieżący mikrocykl ${latest.periodNo}/${latest.microNo}.`
+    : "Dziennik jest pusty.";
+  const cards = current.map(sessionCard).join("");
+  const olderBlock = older.length
+    ? `<details class="day"><summary>Wcześniejsze mikrocykle</summary><div class="day-body">${older.map(sessionCard).join("")}</div></details>`
+    : "";
   const form = role === "athlete" ? `
     <details class="day"><summary>Nowa jednostka</summary><div class="day-body">
       <form data-action="new-session">
@@ -706,8 +805,11 @@ function renderDiaryList() {
         <label>Masa ciała (kg), jeśli mierzona tego dnia</label><input name="bodyKg" placeholder="np. 61,5">
         <button class="block" type="submit">Utwórz jednostkę</button>
       </form>
-    </div></details>` : `<p class="note">Nowe wpisy dodaje zawodnik. Rolę zmienisz w zakładce Więcej.</p>`;
-  shell("dziennik", `<h1>Dziennik</h1><p class="lead">Serie, podniesienia i kilogramy. Objętość, tonaż i intensywność liczą się same.</p>${cards || "<p>Dziennik jest pusty.</p>"}${form}`, true);
+    </div></details>` : `<p class="note">Nowe wpisy dodaje zawodnik na swoim koncie.</p>`;
+  const lead = role === "coach"
+    ? coachLead
+    : "Serie, podniesienia i kilogramy. Objętość, tonaż i intensywność liczą się same.";
+  shell("dziennik", `<h1>Dziennik</h1><p class="lead">${lead}</p>${cards || "<p>Dziennik jest pusty.</p>"}${olderBlock}${form}`, true);
 }
 
 function renderDiary(id) {
@@ -994,18 +1096,25 @@ function renderRoster() {
   </section>`;
 }
 
-function dayTable(days) {
-  const rows = days.map((day) => `<tr>
-    <th>${esc(day.label)}<div class="note">${prettyDate(day.date)}</div></th>
-    <td>${loadCell(day.planSpecial)}${shareNote(day.planSpecial, day.planAll)}</td>
-    <td>${loadCell(day.planAll)}</td>
-    <td>${loadCell(day.realSpecial)}${shareNote(day.realSpecial, day.realAll)}</td>
-    <td>${loadCell(day.realAll)}</td>
-  </tr>`).join("");
-  return `<div class="table-wrap"><table class="data">
-    <thead><tr><th>Dzień</th><th>Plan, specjalne</th><th>Plan, całość</th><th>Realizacja, specjalne</th><th>Realizacja, całość</th></tr></thead>
-    <tbody>${rows}</tbody>
-  </table></div>`;
+function shareText(part, whole) {
+  const share = liftShare(part, whole);
+  return share === "—" ? "" : ` Specjalne to ${share} podniesień tego dnia.`;
+}
+
+function dayCards(days) {
+  return days.map((day) => {
+    const title = `${weekday(day.date)} ${prettyDate(day.date)}`;
+    if (!day.planAll && !day.realAll) {
+      return `<section class="card"><b>${esc(title)}</b><p class="note">Brak planu i brak wpisu.</p></section>`;
+    }
+    return `<section class="card">
+      <b>${esc(title)}</b>
+      <p><b>Plan, specjalne.</b> ${loadCell(day.planSpecial)}.${shareText(day.planSpecial, day.planAll)}</p>
+      <p><b>Plan, całość.</b> ${loadCell(day.planAll)}.</p>
+      <p><b>Realizacja, specjalne.</b> ${loadCell(day.realSpecial)}.${shareText(day.realSpecial, day.realAll)}</p>
+      <p><b>Realizacja, całość.</b> ${loadCell(day.realAll)}.</p>
+    </section>`;
+  }).join("");
 }
 
 function radarChart(rows) {
@@ -1101,7 +1210,31 @@ function competitionSection() {
   </section>`;
 }
 
-function renderAnalysis(arg) {
+function cycleLabel(key) {
+  const [periodNo, microNo] = String(key).split("-").map(Number);
+  const cycle = state.microcycles.find((item) => item.periodNo === periodNo && item.microNo === microNo);
+  return cycle ? `${weekSpan(cycle)}, okres ${cycle.periodNo}` : key;
+}
+
+function analysisTabs(section, chosen) {
+  const items = [
+    ["tydzien", "Ten tydzień"],
+    ["mikrocykle", "Mikrocykle"],
+    ["start", "Start i profil"],
+  ];
+  return `<nav class="tabs">${items.map(([id, label]) => {
+    const suffix = id === "start" || !chosen ? "" : `/${chosen}`;
+    return `<a href="#analiza/${id}${suffix}" class="${section === id ? "here" : ""}">${label}</a>`;
+  }).join("")}</nav>`;
+}
+
+function renderAnalysis(section, microKey) {
+  const tabs = ["tydzien", "mikrocykle", "start"];
+  if (section && !tabs.includes(section)) {
+    microKey = section;
+    section = "tydzien";
+  }
+  if (!tabs.includes(section)) section = "tydzien";
   const { microcycles, article } = analysisModel();
   const keys = microcycles.map((item) => `${item.period_no}-${item.micro_no}`);
   state.microcycles.forEach((cycle) => {
@@ -1109,8 +1242,11 @@ function renderAnalysis(arg) {
     if (!keys.includes(key)) keys.push(key);
   });
   keys.sort();
-  const chosen = keys.includes(arg) ? arg : keys[keys.length - 1];
-  const labels = article.map((item) => `${item.period_no}.${item.micro_no}`);
+  const chosen = keys.includes(microKey) ? microKey : keys[keys.length - 1];
+  const labels = article.map((item) => {
+    const cycle = state.microcycles.find((entry) => entry.periodNo === item.period_no && entry.microNo === item.micro_no);
+    return cycle ? shortDate(cycle.startDate) : `${item.period_no}.${item.micro_no}`;
+  });
   const latest = article[article.length - 1];
   const chosenArticle = article.find((item) => `${item.period_no}-${item.micro_no}` === chosen) || null;
   const previousArticle = chosenArticle ? article[article.indexOf(chosenArticle) - 1] : null;
@@ -1167,11 +1303,11 @@ function renderAnalysis(arg) {
           ${chartLegend([{ color: "#d0893a", name: "plan" }, { color: "#0f6e6e", name: "realizacja" }])}
         </section>
         <section class="card">
-          <b>Tabela dnia</b>
-          <p class="note">Serie, podniesienia i intensywność. Pod częścią specjalną widać, jaki procent podniesień całego dnia stanowią ćwiczenia specjalne.</p>
-          ${dayTable(days)}
+          <b>Dni tygodnia</b>
+          <p class="note">Każdy dzień osobno: plan i realizacja, część specjalna i całość. Przy części specjalnej widać, jaki procent podniesień dnia ona stanowi.</p>
           <p class="note">${esc(mono)}</p>
-        </section>`;
+        </section>
+        ${dayCards(days)}`;
     } else {
       weekCharts = `<p>Dla mikrocyklu ${esc(chosen)} nie ma planu trenera. Tabela dnia powstaje z planu tygodnia.</p>`;
     }
@@ -1184,21 +1320,23 @@ function renderAnalysis(arg) {
     : "Zawodnik wpisuje masę ciała przy jednostce treningowej. Linia pokaże, czy masa spada razem z obciążeniem."}</p>${masses.length ? lineChart([{ color: "#0f6e6e", points: masses.map((session) => ({ label: prettyDate(session.date).slice(0, 5), value: session.bodyKg })) }], "kg") : ""}</section>`;
   const profile = teiProfile(state.tei || {});
   const teiBlock = `<section class="card chart-card"><b>Profil techniczny</b><p class="note">${esc(teiSentence(profile))} Pomarańcz to wzorzec z arkusza, zieleń to wynik zawodnika jako procent przysiadu tyłem.</p>${radarChart(profile.rows)}${profile.rows.length >= 3 ? chartLegend([{ color: "#d0893a", name: "wzorzec" }, { color: "#0f6e6e", name: "zawodnik" }]) : ""}</section>`;
-  const select = keys.length ? `<label>Mikrocykl na wykresach dni</label><select data-action="pick-micro">${keys.map((key) => `<option value="${esc(key)}" ${key === chosen ? "selected" : ""}>okres ${esc(key.replace("-", ", mikrocykl "))}</option>`).join("")}</select>` : "";
+  const select = keys.length ? `<label>Tydzień</label><select data-action="pick-micro" data-section="${section}">${keys.map((key) => `<option value="${esc(key)}" ${key === chosen ? "selected" : ""}>${esc(cycleLabel(key))}</option>`).join("")}</select>` : "";
+  const leads = {
+    tydzien: "Intensywność, podniesienia i dni wybranego tygodnia. Liczone z planu i z dziennika.",
+    mikrocykle: "Tonaż, podniesienia, ACWR i udział kompleksów w kolejnych mikrocyklach.",
+    start: "Masa ciała, profil techniczny, starty i cel roczny.",
+  };
+  const body = {
+    tydzien: `${select}${weekCharts}`,
+    mikrocykle: `${kpis}${tonnageChart}${volumeChart}${acwrChart}${select}${complexChart}`,
+    start: `${bodyChart}${teiBlock}${competitionSection()}`,
+  }[section];
   shell("analiza", `
     <h1>Analiza</h1>
-    <p class="lead">Te same wielkości co w arkuszach trenera: tonaż, podniesienia, intensywność, ACWR, udział kompleksów i profil techniczny. Liczą się same z planu i dziennika wybranego zawodnika.</p>
+    <p class="lead">${leads[section]}</p>
     ${renderRoster()}
-    ${kpis}
-    ${tonnageChart}
-    ${volumeChart}
-    ${acwrChart}
-    ${select}
-    ${complexChart}
-    ${weekCharts}
-    ${bodyChart}
-    ${teiBlock}
-    ${competitionSection()}
+    ${analysisTabs(section, chosen)}
+    ${body}
     ${article.length || state.microcycles.length ? "" : "<p>Brak planu i dziennika.</p>"}
     <button class="block no-print" type="button" data-action="export-excel">Pobierz Excel</button>
   `, true);
@@ -1220,13 +1358,12 @@ function renderMore() {
       <label>Kilogramy</label><input name="maxKg" required placeholder="95">
       <button class="block" type="submit">Dodaj rekord</button>
     </form>` : "";
-  const coachTools = role === "coach" ? `
-    <h2>Zawodnicy</h2>
-    <label>Otwarty dziennik</label>
+  const account = role === "coach" ? `
+    <label>Otwarty zawodnik</label>
     <select data-action="pick-athlete">
       ${athletes.map((athlete) => `<option value="${athlete.id}" ${athlete.id === selectedAthleteId ? "selected" : ""}>${esc(athlete.full_name)}</option>`).join("")}
     </select>
-    <button class="block" type="button" data-action="create-invite">Nowe zaproszenie dla zawodnika</button>
+    ${inviteCard()}
   ` : `
     <h2>Połącz z trenerem</h2>
     <form data-action="claim-invite" class="card">
@@ -1235,36 +1372,59 @@ function renderMore() {
       <button class="block" type="submit">Przypisz trenera</button>
     </form>
   `;
+  const reset = role === "coach" ? `
+    <details class="day"><summary>Przykładowe dane</summary><div class="day-body">
+      <p class="note">Przywrócenie przykładu kasuje plan i dziennik tego zawodnika.</p>
+      <button class="danger block" type="button" data-action="reset">Przywróć przykład temu zawodnikowi</button>
+    </div></details>` : "";
   shell("wiecej", `
     <h1>Więcej</h1>
     <p class="lead">${esc(profile?.full_name || "")} · ${esc(currentUser?.email || "")}</p>
-    ${coachTools}
-    <h2>Excel</h2>
+    <h2>Życiówki</h2>
+    <p class="note">Rekordy z tej listy liczą procent obciążenia w planie i w dzienniku. Wpis treningu zachowuje rekord z chwili wpisu. Profil techniczny pod spodem jest tylko do radaru i nie zmienia tych procentów.</p>
+    ${records}${add}
+    ${renderAthleteProfile()}
+    <h2>Konto</h2>
+    ${account}
     <button class="block" type="button" data-action="export-excel">Pobierz Excel</button>
-    <p class="note">Skoroszyt zawiera rekordy, plan, dziennik, podsumowanie mikrocykli, kompleksy oraz porównanie planu z realizacją.</p>
-    <h2>Kopia zapasowa</h2>
+    <p class="note">Skoroszyt zawiera rekordy, plan, dziennik, mikrocykle, kompleksy, plan i realizację, masę ciała, starty, cele oraz profil.</p>
     <button class="quiet block" type="button" data-action="export">Pobierz kopię danych</button>
     <label>Odtwórz z pliku</label>
     <input id="import-file" type="file" accept="application/json,.json">
     <p class="note">Na co dzień dane synchronizują się automatycznie. Plik jest tylko kopią awaryjną.</p>
-    <h2>Dane do analiz</h2>
-    ${renderAthleteProfile()}
-    <h2>Rekordy bazowe</h2>
-    <p class="note">Intensywność to kilogramy z treningu podzielone przez rekord. W dzienniku zostaje rekord z chwili wpisu.</p>
-    ${records}${add}
-    <h2>Konto</h2>
     <button class="quiet block" type="button" data-action="reload-cloud">Pobierz najnowsze dane</button>
     <button class="quiet block" type="button" data-action="sign-out">Wyloguj</button>
-    ${role === "coach" ? `<button class="danger block" type="button" data-action="reset">Przywróć przykład temu zawodnikowi</button>` : ""}
+    ${reset}
   `, true);
+}
+
+const RECORD_MATCH = {
+  BS: ["przysiad", "przysiad tył", "przysiad tyl"],
+  FS: ["przysiad przód", "przysiad przod"],
+  SN: ["rwanie"],
+  PSN: ["rwanie siłowe", "rwanie silowe"],
+  CnJ: ["dwubój", "dwuboj"],
+  C: ["zarzut"],
+  J: ["podrzut"],
+  PC: ["zarzut siłowy", "zarzut silowy"],
+};
+
+function matchingRecord(key) {
+  const names = RECORD_MATCH[key] || [];
+  return state.records.find((record) => names.includes(String(record.name || "").trim().toLowerCase()));
 }
 
 function renderAthleteProfile() {
   ensureShape(state);
   const locked = role !== "coach";
-  const lifts = TEI_LIFTS.map(([key, label, , ref]) => `
-    <label>${esc(label)}${key === "BS" ? " — punkt odniesienia" : `, wzorzec ${pct(ref)}`}</label>
-    <input name="${key}" value="${state.tei[key] ? pl(state.tei[key], 1) : ""}" ${locked ? "readonly" : ""} placeholder="kg">`).join("");
+  const lifts = TEI_LIFTS.map(([key, label, , ref]) => {
+    const record = matchingRecord(key);
+    const hint = record
+      ? `<p class="note">W planie „${esc(record.name)}” ma ${pl(record.maxKg, 0)} kg i liczy procenty treningu. Radar używa liczby z tego pola.</p>${locked ? "" : `<button class="quiet block" type="button" data-action="use-record" data-key="${key}" data-kg="${record.maxKg}">Użyj ${pl(record.maxKg, 0)} kg z planu</button>`}`
+      : `<p class="note">Ta liczba jest tylko do radaru.</p>`;
+    return `<label>${esc(label)}${key === "BS" ? " — punkt odniesienia radaru" : `, wzorzec ${pct(ref)}`}</label>
+      <input name="${key}" value="${state.tei[key] ? pl(state.tei[key], 1) : ""}" ${locked ? "readonly" : ""} placeholder="kg">${hint}`;
+  }).join("");
   const goals = (state.goals || []).map((goal) => `
     <div class="ex"><b>${esc(goal.year)}</b>
       <div>rwanie ${pl(goal.snatch, 0)} kg, podrzut ${pl(goal.cleanJerk, 0)} kg, dwubój ${pl(num(goal.snatch) + num(goal.cleanJerk), 0)} kg</div>
@@ -1277,7 +1437,10 @@ function renderAthleteProfile() {
     </div>`).join("");
   const editor = locked ? `
     <p class="note">Te dane uzupełnia trener. Ty wpisujesz dziennik i masę ciała przy treningu.</p>
-    ${lifts}${goals || "<p class=\"note\">Brak celu rocznego.</p>"}${meets || "<p class=\"note\">Brak startów.</p>"}` : `
+    <b>Profil techniczny, do radaru</b>
+    ${lifts}
+    <h2>Starty i cel</h2>
+    ${goals || "<p class=\"note\">Brak celu rocznego.</p>"}${meets || "<p class=\"note\">Brak startów.</p>"}` : `
     <form data-action="save-profile" class="card">
       <label>Płeć do Sinclaira</label>
       <select name="sex">
@@ -1286,11 +1449,12 @@ function renderAthleteProfile() {
         <option value="M" ${state.sex === "M" ? "selected" : ""}>mężczyzna</option>
       </select>
       <p class="note">Sinclair używa współczynników IWF na lata 2025–2028. q-points liczą się wzorem z dziennika trenera.</p>
-      <h2>Profil techniczny</h2>
-      <p class="note">Życiówki do radaru. Każdy bój dzieli się przez przysiad tył i porównuje ze wzorcem z arkusza TEI.</p>
+      <b>Profil techniczny, do radaru</b>
+      <p class="note">Każdy bój dzieli się przez przysiad tył i porównuje ze wzorcem z arkusza TEI. Te kilogramy nie zmieniają procentów w planie.</p>
       ${lifts}
       <button class="block" type="submit">Zapisz płeć i profil</button>
     </form>
+    <h2>Starty i cel</h2>
     <form data-action="add-goal" class="card">
       <label>Cel roczny</label>
       <label>Rok</label><input name="year" type="number" min="2000" value="2026" required>
@@ -1379,7 +1543,8 @@ document.addEventListener("click", async (event) => {
       showError(error);
       return;
     }
-    message = `Kod zaproszenia: ${data}. Jest ważny 7 dni i działa jeden raz.`;
+    inviteCode = String(data);
+    message = "Kod zostaje na ekranie. Możesz go skopiować.";
     render();
   } else if (action === "start-planned-session") {
     if (role !== "athlete") return;
@@ -1441,12 +1606,30 @@ document.addEventListener("click", async (event) => {
     state.competitions = (state.competitions || []).filter((item) => item.id !== Number(target.dataset.id));
     save();
     render();
+  } else if (action === "copy-invite") {
+    try {
+      await navigator.clipboard.writeText(inviteCode);
+      message = "Kod skopiowany. Możesz go wysłać zawodnikowi.";
+    } catch (_error) {
+      message = "Zaznacz kod na ekranie i skopiuj go ręcznie.";
+    }
+    render();
+  } else if (action === "use-record") {
+    if (role !== "coach") return;
+    ensureShape(state);
+    state.tei[target.dataset.key] = num(target.dataset.kg);
+    save();
+    message = "Przeniesiono rekord planu do profilu technicznego.";
+    render();
   } else if (action === "open-athlete") {
     try {
       await loadAthleteData(target.dataset.id);
       const current = roster.find((item) => item.id === target.dataset.id);
       if (current) Object.assign(current, snapshotOf(state));
-      location.hash = "#analiza";
+      const section = ["tydzien", "mikrocykle", "start"].includes(location.hash.split("/")[1])
+        ? location.hash.split("/")[1]
+        : "tydzien";
+      location.hash = `#analiza/${section}`;
       render();
     } catch (error) {
       showError(error);
@@ -1456,15 +1639,17 @@ document.addEventListener("click", async (event) => {
 
 document.addEventListener("change", (event) => {
   if (event.target.dataset.action === "pick-micro") {
-    location.hash = `#analiza/${event.target.value}`;
+    const section = event.target.dataset.section || "tydzien";
+    location.hash = `#analiza/${section}/${event.target.value}`;
   }
   if (event.target.id === "import-file" && event.target.files[0]) {
     importFile(event.target.files[0]);
   }
   if (event.target.dataset.action === "pick-athlete") {
+    const nextHash = screenAfterAthleteSwitch();
     loadAthleteData(event.target.value)
       .then(() => {
-        location.hash = "#plan";
+        location.hash = nextHash;
         render();
       })
       .catch(showError);
